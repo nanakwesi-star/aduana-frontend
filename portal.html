@@ -357,6 +357,48 @@ function App() {
     } catch (e) { showToast(e.message, "error"); }
   }
 
+  // --- Parent accounts ---
+  const [parentsList, setParentsList] = useState([]);
+  const [newParent, setNewParent] = useState({ name: "", email: "", password: "", admissionNos: "" });
+
+  async function loadParents() {
+    try { setParentsList(await api("/api/admin/parents", token)); } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function createParent() {
+    if (!newParent.name || !newParent.email || !newParent.password) return showToast("Fill in name, email, and password.", "error");
+    const admissionNos = newParent.admissionNos.split(",").map((s) => s.trim()).filter(Boolean);
+    try {
+      const result = await api("/api/admin/parents", token, { method: "POST", body: JSON.stringify({ ...newParent, admissionNos }) });
+      showToast(`Parent account created. Linked: ${result.linked.join(", ") || "none yet"}.${result.notFound.length ? " Not found: " + result.notFound.join(", ") : ""}`, result.notFound.length ? "error" : "success");
+      setNewParent({ name: "", email: "", password: "", admissionNos: "" });
+      loadParents();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  // --- Student logins ---
+  const [allStudents, setAllStudents] = useState([]);
+  const [credentialForm, setCredentialForm] = useState({}); // { [studentId]: { email, password } }
+  const [showCredentialFor, setShowCredentialFor] = useState(null);
+
+  async function loadAllStudents() {
+    try { setAllStudents(await api("/api/students", token)); } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function issueCredentials(studentId) {
+    const form = credentialForm[studentId] || {};
+    if (!form.email || !form.password) return showToast("Enter an email and password.", "error");
+    try {
+      await api(`/api/admin/students/${studentId}/set-credentials`, token, { method: "POST", body: JSON.stringify(form) });
+      showToast("Login issued.", "success");
+      setShowCredentialFor(null);
+      setCredentialForm({ ...credentialForm, [studentId]: {} });
+      loadAllStudents();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  useEffect(() => { if (token && view === "admin") { loadParents(); loadAllStudents(); } }, [token, view]);
+
   function showToast(msg, kind = "info") { setToast({ msg, kind }); setTimeout(() => setToast(null), 3500); }
 
   async function signIn() {
@@ -698,6 +740,74 @@ function App() {
               </div>
             ))}
             {classList.length === 0 && <div className="text-sm text-stone-400">No classes created yet.</div>}
+          </div>
+
+          {/* Parent Accounts */}
+          <div className="mt-8">
+            <h2 className="font-serif text-lg mb-2">Parent Accounts</h2>
+            <div className="border border-stone-200 rounded-lg bg-white p-4 mb-3">
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <input placeholder="Parent's full name" value={newParent.name} onChange={(e) => setNewParent({ ...newParent, name: e.target.value })} className="border border-stone-300 rounded px-2 py-1.5 text-sm" />
+                <input placeholder="Email" type="email" value={newParent.email} onChange={(e) => setNewParent({ ...newParent, email: e.target.value })} className="border border-stone-300 rounded px-2 py-1.5 text-sm" />
+                <input placeholder="Password (min 8 chars)" value={newParent.password} onChange={(e) => setNewParent({ ...newParent, password: e.target.value })} className="border border-stone-300 rounded px-2 py-1.5 text-sm" />
+                <input placeholder="Children's admission numbers, comma-separated" value={newParent.admissionNos} onChange={(e) => setNewParent({ ...newParent, admissionNos: e.target.value })} className="border border-stone-300 rounded px-2 py-1.5 text-sm" />
+              </div>
+              <Btn kind="primary" onClick={createParent}>+ Create parent account</Btn>
+            </div>
+            <div className="border border-stone-200 rounded-lg bg-white overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-stone-100 text-stone-600 text-xs uppercase"><tr><th className="text-left px-3 py-2">Name</th><th className="text-left px-3 py-2">Email</th><th className="text-left px-3 py-2">Children</th></tr></thead>
+                <tbody>
+                  {parentsList.map((p) => (
+                    <tr key={p.id} className="border-t border-stone-100">
+                      <td className="px-3 py-2">{p.name}</td>
+                      <td className="px-3 py-2">{p.email}</td>
+                      <td className="px-3 py-2">{p.children.map((c) => c.fullName).join(", ") || <span className="text-stone-400">No children linked</span>}</td>
+                    </tr>
+                  ))}
+                  {parentsList.length === 0 && <tr><td colSpan="3" className="px-3 py-4 text-center text-stone-400">No parent accounts yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Student Logins */}
+          <div className="mt-8">
+            <h2 className="font-serif text-lg mb-2">Student Logins</h2>
+            <p className="text-xs text-stone-500 mb-2">Issue a student their own login so they can sign in and see their results directly.</p>
+            <div className="border border-stone-200 rounded-lg bg-white overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-stone-100 text-stone-600 text-xs uppercase"><tr><th className="text-left px-3 py-2">Student</th><th className="text-left px-3 py-2">Class</th><th className="text-left px-3 py-2">Login Status</th><th></th></tr></thead>
+                <tbody>
+                  {allStudents.map((s) => (
+                    <React.Fragment key={s.id}>
+                      <tr className="border-t border-stone-100">
+                        <td className="px-3 py-2">{s.full_name}</td>
+                        <td className="px-3 py-2">{s.class}</td>
+                        <td className="px-3 py-2">{s.email ? <span className="text-emerald-700">{s.email}</span> : <span className="text-stone-400">No login yet</span>}</td>
+                        <td className="px-3 py-2">
+                          <button onClick={() => setShowCredentialFor(showCredentialFor === s.id ? null : s.id)} className="text-violet-700 text-xs hover:underline">
+                            {s.email ? "Reset login" : "Issue login"}
+                          </button>
+                        </td>
+                      </tr>
+                      {showCredentialFor === s.id && (
+                        <tr className="bg-stone-50">
+                          <td colSpan="4" className="px-3 py-2">
+                            <div className="flex gap-1.5 items-center">
+                              <input placeholder="Email" type="email" value={credentialForm[s.id]?.email || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [s.id]: { ...credentialForm[s.id], email: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-xs" />
+                              <input placeholder="Password (min 8 chars)" value={credentialForm[s.id]?.password || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [s.id]: { ...credentialForm[s.id], password: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-xs" />
+                              <Btn onClick={() => issueCredentials(s.id)}>Save</Btn>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                  {allStudents.length === 0 && <tr><td colSpan="4" className="px-3 py-4 text-center text-stone-400">No students yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       ) : (
