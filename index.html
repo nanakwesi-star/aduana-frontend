@@ -595,13 +595,18 @@ function App() {
       return;
     }
 
-    const marks = marksEdit
+ const marks = marksEdit
       .filter((m) => m.class_score !== "" || m.exam_score !== "")
-      .map((m) => ({
-        student_id: m.student_id,
-        class_score: Number(m.class_score || 0),
-        exam_score: Number(m.exam_score || 0)
-      }));
+      .map((m) => {
+        const classScore = Number(m.class_score || 0);
+        const examScore = Number(m.exam_score || 0);
+        return {
+          student_id: m.student_id,
+          class_score: classScore,
+          exam_score: examScore,
+          score: classScore + examScore
+        };
+      });
 
     if (correctionMode) {
       setModal("file_correction");
