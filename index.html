@@ -600,11 +600,14 @@ function App() {
       .map((m) => {
         const classScore = Number(m.class_score || 0);
         const examScore = Number(m.exam_score || 0);
+        const total = classScore + examScore;
         return {
           student_id: m.student_id,
           class_score: classScore,
           exam_score: examScore,
-          score: classScore + examScore
+          score: total,
+          total: total,
+          total_score: total
         };
       });
 
