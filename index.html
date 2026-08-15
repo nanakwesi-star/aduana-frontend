@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Aduana Model JHS — Empowering Students, Building the Future</title>
+<title>Aduana Model JHS — Results Workflow</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -11,302 +14,1211 @@
   tailwind.config = {
     theme: {
       extend: {
-        colors: {
-          violet: { 950: '#241238', 900: '#3B1E6B', 100: '#EDE4FF' },
-          gold: { DEFAULT: '#F0A500', light: '#FFD666' },
-        },
-        fontFamily: { serif: ['Fraunces', 'Georgia', 'serif'], sans: ['system-ui', 'sans-serif'] },
+        colors: { gold: { DEFAULT: '#F0A500', light: '#FFD666' } },
       }
     }
   }
 </script>
-<style>
-  html { scroll-behavior: smooth; }
-  body { font-family: system-ui, sans-serif; background: #FFFDF7; color: #241238; }
-  .font-serif { font-family: 'Fraunces', Georgia, serif; }
-  .kente-stripe {
-    height: 10px;
-    background: repeating-linear-gradient(-45deg, #F0A500 0 14px, #3B1E6B 14px 28px);
-  }
-  .placeholder-tile {
-    background: repeating-linear-gradient(135deg, #EDE4FF 0 12px, #F5EEFF 12px 24px);
-  }
-  #mobileMenu { display: none; }
-  #mobileMenu.open { display: block; }
-</style>
+<style>body { font-family: system-ui, sans-serif; background: #FFFDF7; } .font-serif { font-family: 'Fraunces', Georgia, 'Times New Roman', serif; }</style>
 </head>
 <body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback } = React;
 
-<!-- NAV -->
-<header class="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-violet-100">
-  <div class="max-w-6xl mx-auto px-4 md:px-6 flex items-center justify-between h-16">
-    <a href="#home" class="flex items-center gap-2">
-      <span class="text-2xl">🏅</span>
-      <span class="font-serif font-semibold text-lg text-violet-900">Aduana Model JHS</span>
-    </a>
-    <nav class="hidden md:flex items-center gap-6 text-sm font-medium text-violet-950">
-      <a href="#home" class="hover:text-gold">Home</a>
-      <a href="#about" class="hover:text-gold">About</a>
-      <a href="#academics" class="hover:text-gold">Academics</a>
-      <a href="#admissions" class="hover:text-gold">Admissions</a>
-      <a href="#news" class="hover:text-gold">News</a>
-      <a href="#gallery" class="hover:text-gold">Gallery</a>
-      <a href="#contact" class="hover:text-gold">Contact</a>
-    </nav>
-    <div class="flex items-center gap-2">
-      <a href="portal.html" class="bg-violet-900 hover:bg-violet-950 text-white text-sm font-medium px-4 py-2 rounded-full transition">Login</a>
-      <button onclick="document.getElementById('mobileMenu').classList.toggle('open')" class="md:hidden text-violet-900 px-2 py-1 border border-violet-200 rounded">☰</button>
-    </div>
-  </div>
-  <div id="mobileMenu" class="md:hidden border-t border-violet-100 px-4 py-3 space-y-2 text-sm font-medium text-violet-950 bg-white">
-    <a href="#home" class="block">Home</a>
-    <a href="#about" class="block">About</a>
-    <a href="#academics" class="block">Academics</a>
-    <a href="#admissions" class="block">Admissions</a>
-    <a href="#news" class="block">News</a>
-    <a href="#gallery" class="block">Gallery</a>
-    <a href="#contact" class="block">Contact</a>
-  </div>
-</header>
+const API_BASE = "https://aduana-results-api.onrender.com";
 
-<!-- HERO -->
-<section id="home" class="bg-violet-900 text-white">
-  <div class="max-w-6xl mx-auto px-4 md:px-6 py-20 md:py-28 text-center">
-    <p class="uppercase tracking-[0.2em] text-gold-light text-xs md:text-sm font-medium mb-4">Kasoa, Central Region, Ghana</p>
-    <h1 class="font-serif text-4xl md:text-6xl font-semibold leading-tight max-w-3xl mx-auto">
-      Empowering Students.<br/>Connecting Families.<br/>Building the Future.
-    </h1>
-    <p class="mt-6 text-violet-100 max-w-xl mx-auto text-base md:text-lg">
-      A Junior High School community where every learner is known, every parent is informed, and every result is earned with integrity.
-    </p>
-    <div class="mt-8 flex flex-wrap gap-3 justify-center">
-      <a href="#admissions" class="bg-gold hover:bg-gold-light text-violet-950 font-semibold px-6 py-3 rounded-full transition">Apply for Admission</a>
-      <a href="portal.html" class="border border-white/40 hover:border-white text-white font-medium px-6 py-3 rounded-full transition">Staff / Parent / Student Login</a>
-    </div>
-  </div>
-  <div class="kente-stripe"></div>
-</section>
+const STATUS_META = {
+  draft: { label: "Draft", color: "bg-stone-200 text-stone-700" },
+  submitted: { label: "Awaiting Admin Review", color: "bg-amber-100 text-amber-800" },
+  admin_returned: { label: "Returned to Teacher", color: "bg-rose-100 text-rose-800" },
+  admin_approved: { label: "Awaiting Headmaster", color: "bg-violet-100 text-violet-800" },
+  hm_returned: { label: "Returned to Administrator", color: "bg-rose-100 text-rose-800" },
+  published: { label: "Published", color: "bg-emerald-100 text-emerald-800" },
+  correction_pending_admin: { label: "Correction — Awaiting Admin", color: "bg-amber-100 text-amber-800" },
+  correction_pending_hm: { label: "Correction — Awaiting Headmaster", color: "bg-violet-100 text-violet-800" },
+  locked: { label: "Permanently Locked", color: "bg-stone-800 text-stone-100" },
+};
 
-<!-- STATS -->
-<section class="bg-violet-100">
-  <div class="max-w-6xl mx-auto px-4 md:px-6 py-10 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-    <div><div class="font-serif text-3xl md:text-4xl text-violet-900 font-semibold">500+</div><div class="text-xs md:text-sm text-violet-900/70 mt-1">Students Enrolled</div></div>
-    <div><div class="font-serif text-3xl md:text-4xl text-violet-900 font-semibold">32</div><div class="text-xs md:text-sm text-violet-900/70 mt-1">Dedicated Teachers</div></div>
-    <div><div class="font-serif text-3xl md:text-4xl text-violet-900 font-semibold">98%</div><div class="text-xs md:text-sm text-violet-900/70 mt-1">BECE Pass Rate</div></div>
-    <div><div class="font-serif text-3xl md:text-4xl text-violet-900 font-semibold">JHS 1–3</div><div class="text-xs md:text-sm text-violet-900/70 mt-1">Programme Levels</div></div>
-  </div>
-</section>
+function decodeToken(token) {
+  try {
+    const payload = token.split(".")[1];
+    const norm = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = norm + "===".slice((norm.length + 3) % 4);
+    return JSON.parse(atob(padded));
+  } catch { return null; }
+}
 
-<!-- ABOUT / PRINCIPAL -->
-<section id="about" class="max-w-6xl mx-auto px-4 md:px-6 py-20 grid md:grid-cols-2 gap-10 items-center">
-  <div class="placeholder-tile rounded-2xl aspect-[4/5] flex items-end p-6">
-    <div class="bg-white/90 rounded-xl px-4 py-3">
-      <div class="font-serif text-violet-900 font-semibold">Kwame Asante</div>
-      <div class="text-xs text-violet-900/60">Headmaster, Aduana Model JHS</div>
-    </div>
-  </div>
-  <div>
-    <p class="uppercase tracking-[0.15em] text-gold text-xs font-semibold mb-2">Headmaster's Message</p>
-    <h2 class="font-serif text-3xl md:text-4xl text-violet-950 font-semibold mb-4">A school built on discipline, care, and real results.</h2>
-    <p class="text-violet-950/80 leading-relaxed mb-4">
-      "At Aduana Model JHS, we believe every child deserves a school that takes their future as seriously as their family does. Our teachers know each learner by name, our results are tracked and verified at every stage, and our doors are always open to parents who want to be part of that journey."
-    </p>
-    <p class="text-violet-950/80 leading-relaxed">
-      We combine strong academic fundamentals in Mathematics, English, Science, and Computing with the values of respect, punctuality, and honesty — the same standards we hold our own results process to.
-    </p>
-  </div>
-</section>
+function fmt(ts) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleString(undefined, { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
 
-<!-- ACADEMICS -->
-<section id="academics" class="bg-violet-100 py-20">
-  <div class="max-w-6xl mx-auto px-4 md:px-6">
-    <p class="uppercase tracking-[0.15em] text-gold text-xs font-semibold mb-2 text-center">Programmes</p>
-    <h2 class="font-serif text-3xl md:text-4xl text-violet-950 font-semibold mb-10 text-center">Academics at Every Level</h2>
-    <div class="grid md:grid-cols-3 gap-6">
-      <div class="bg-white rounded-2xl p-6 border border-violet-200">
-        <div class="text-gold font-serif text-2xl font-semibold mb-2">JHS 1</div>
-        <p class="text-sm text-violet-950/70">Foundation year — building strong study habits and core skills across all subjects.</p>
-      </div>
-      <div class="bg-white rounded-2xl p-6 border border-violet-200">
-        <div class="text-gold font-serif text-2xl font-semibold mb-2">JHS 2</div>
-        <p class="text-sm text-violet-950/70">Deepening subject mastery, with continuous assessment guiding every learner's progress.</p>
-      </div>
-      <div class="bg-white rounded-2xl p-6 border border-violet-200">
-        <div class="text-gold font-serif text-2xl font-semibold mb-2">JHS 3</div>
-        <p class="text-sm text-violet-950/70">BECE preparation — focused revision, mock exams, and one-on-one academic support.</p>
-      </div>
-    </div>
-    <div class="mt-6 flex flex-wrap gap-2 justify-center text-sm text-violet-900">
-      <span class="bg-white border border-violet-200 rounded-full px-4 py-1.5">Mathematics</span>
-      <span class="bg-white border border-violet-200 rounded-full px-4 py-1.5">English Language</span>
-      <span class="bg-white border border-violet-200 rounded-full px-4 py-1.5">Integrated Science</span>
-      <span class="bg-white border border-violet-200 rounded-full px-4 py-1.5">Computing / ICT</span>
-      <span class="bg-white border border-violet-200 rounded-full px-4 py-1.5">Social Studies</span>
-      <span class="bg-white border border-violet-200 rounded-full px-4 py-1.5">French</span>
-      <span class="bg-white border border-violet-200 rounded-full px-4 py-1.5">Religious &amp; Moral Education</span>
-    </div>
-  </div>
-</section>
+function getOrdinalSuffix(n) {
+  if (!n || isNaN(n)) return "—";
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
 
-<!-- NEWS & EVENTS -->
-<section id="news" class="max-w-6xl mx-auto px-4 md:px-6 py-20">
-  <p class="uppercase tracking-[0.15em] text-gold text-xs font-semibold mb-2 text-center">Stay Informed</p>
-  <h2 class="font-serif text-3xl md:text-4xl text-violet-950 font-semibold mb-10 text-center">News &amp; Upcoming Events</h2>
-  <div class="grid md:grid-cols-2 gap-10">
-    <div>
-      <h3 class="font-serif text-xl text-violet-900 font-semibold mb-4">Latest Announcements</h3>
-      <div class="space-y-4">
-        <div class="border-l-4 border-gold pl-4">
-          <div class="text-xs text-violet-900/50 mb-0.5">August 2026</div>
-          <div class="font-medium">Term 2 results now published for JHS 2B</div>
-        </div>
-        <div class="border-l-4 border-gold pl-4">
-          <div class="text-xs text-violet-900/50 mb-0.5">July 2026</div>
-          <div class="font-medium">New Parent Portal launched for real-time result access</div>
-        </div>
-        <div class="border-l-4 border-gold pl-4">
-          <div class="text-xs text-violet-900/50 mb-0.5">June 2026</div>
-          <div class="font-medium">Admissions open for the 2026/27 academic year</div>
+async function api(path, token, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
+
+function Badge({ status }) {
+  const meta = STATUS_META[status] || { label: status, color: "bg-stone-200 text-stone-700" };
+  return <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${meta.color}`}>{meta.label}</span>;
+}
+
+function Btn({ children, onClick, kind = "secondary", disabled }) {
+  const styles = {
+    primary: "bg-gold text-violet-950 font-semibold hover:bg-gold-light",
+    success: "bg-emerald-700 text-white hover:bg-emerald-800",
+    danger: "bg-rose-700 text-white hover:bg-rose-800",
+    secondary: "bg-stone-200 text-stone-800 hover:bg-stone-300",
+  };
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed ${styles[kind]}`}>
+      {children}
+    </button>
+  );
+}
+
+function ChangePasswordModal({ token, onClose, showToastFn }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (newPassword.length < 8) return setError("New password must be at least 8 characters.");
+    if (newPassword !== confirmPassword) return setError("New passwords do not match.");
+    setSaving(true); setError(null);
+    try {
+      await api("/api/auth/change-password", token, { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) });
+      showToastFn("Password changed.", "success");
+      onClose();
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-5">
+        <div className="font-medium mb-3">Change Password</div>
+        <input type="password" placeholder="Current password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm mb-2" />
+        <input type="password" placeholder="New password (min 8 chars)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm mb-2" />
+        <input type="password" placeholder="Confirm new password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm mb-2" />
+        {error && <div className="text-rose-700 text-xs mb-2">{error}</div>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn kind="primary" onClick={submit} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
         </div>
       </div>
     </div>
-    <div>
-      <h3 class="font-serif text-xl text-violet-900 font-semibold mb-4">Upcoming Events</h3>
-      <div class="space-y-4">
-        <div class="flex gap-4 items-start">
-          <div class="bg-violet-900 text-white rounded-lg text-center px-3 py-2 leading-none">
-            <div class="text-xs">SEP</div><div class="text-lg font-serif font-semibold">08</div>
+  );
+}
+
+function ParentDashboard({ user, token, onSignOut }) {
+  const [children, setChildren] = useState([]);
+  const [selectedChild, setSelectedChild] = useState(null);
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [toast, setToast] = useState(null);
+  function showToast(msg, kind = "info") { setToast({ msg, kind }); setTimeout(() => setToast(null), 3000); }
+
+  useEffect(() => {
+    api("/api/parent/children", token).then((rows) => {
+      setChildren(rows);
+      if (rows.length === 1) setSelectedChild(rows[0].id);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [token]);
+
+  useEffect(() => {
+    if (!selectedChild) { setResults(null); return; }
+    api(`/api/parent/children/${selectedChild}/results`, token).then(setResults).catch(() => setResults([]));
+  }, [selectedChild, token]);
+
+  const child = children.find((c) => c.id === selectedChild);
+
+  return (
+    <div className="min-h-screen bg-stone-50 text-stone-900">
+      <div className="bg-violet-950 text-violet-50 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🏅</span>
+          <div><div className="font-serif text-lg leading-tight">Aduana Model JHS</div>
+          <div className="text-[11px] text-violet-300 -mt-0.5">Parent Portal</div></div>
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-violet-200">{user.name} · Parent</span>
+          <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white">Change password</button>
+          <button onClick={onSignOut} className="text-violet-300 hover:text-white">Sign out</button>
+        </div>
+      </div>
+      {showChangePw && <ChangePasswordModal token={token} onClose={() => setShowChangePw(false)} showToastFn={showToast} />}
+      {toast && <div className={`fixed bottom-4 right-4 px-4 py-2.5 rounded-lg shadow-lg text-sm text-white z-50 ${toast.kind === "error" ? "bg-rose-700" : toast.kind === "success" ? "bg-emerald-700" : "bg-stone-800"}`}>{toast.msg}</div>}
+
+      <div className="max-w-3xl mx-auto p-4 md:p-6">
+        {loading ? (
+          <div className="text-stone-400 text-sm">Loading…</div>
+        ) : children.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-xl p-6 text-sm text-stone-500">
+            No children are linked to your account yet. Contact the school office to have them linked.
           </div>
-          <div><div class="font-medium">Speech &amp; Prize-Giving Day</div><div class="text-sm text-violet-950/60">School Assembly Hall, 9:00 AM</div></div>
+        ) : (
+          <>
+            <h1 className="font-serif text-2xl mb-3">My Children</h1>
+            <div className="flex flex-wrap gap-2 mb-5">
+              {children.map((c) => (
+                <button key={c.id} onClick={() => setSelectedChild(c.id)}
+                  className={`px-3 py-2 rounded-lg border text-sm ${selectedChild === c.id ? "bg-violet-800 text-white border-violet-800" : "bg-white border-stone-200 hover:border-violet-300"}`}>
+                  {c.full_name} <span className="opacity-70">· {c.class}</span>
+                </button>
+              ))}
+            </div>
+
+            {child && (
+              <div>
+                <div className="bg-white border border-stone-200 rounded-xl p-4 mb-3">
+                  <div className="font-medium">{child.full_name}</div>
+                  <div className="text-sm text-stone-500">{child.class} · Admission No. {child.admission_no}</div>
+                </div>
+                <h2 className="font-serif text-lg mb-2">Published Results</h2>
+                {results === null ? (
+                  <div className="text-sm text-stone-400">Loading…</div>
+                ) : results.length === 0 ? (
+                  <div className="bg-white border border-stone-200 rounded-xl p-4 text-sm text-stone-500">No published results yet.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {results.map((r, i) => (
+                      <div key={i} className="bg-white border border-stone-200 rounded-xl p-4 flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{r.subject}</div>
+                          <div className="text-xs text-stone-500">{r.term} {r.academic_year} · Published {fmt(r.published_at)}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-serif">{r.score}</div>
+                          {r.grade && <div className="text-xs text-stone-500">Grade {r.grade}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StudentDashboard({ user, token, onSignOut }) {
+  const [me, setMe] = useState(null);
+  const [results, setResults] = useState(null);
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [toast, setToast] = useState(null);
+  function showToast(msg, kind = "info") { setToast({ msg, kind }); setTimeout(() => setToast(null), 3000); }
+
+  useEffect(() => {
+    api("/api/student/me", token).then(setMe).catch(() => {});
+    api("/api/student/results", token).then(setResults).catch(() => setResults([]));
+  }, [token]);
+
+  const average = results && results.length
+    ? (results.reduce((sum, r) => sum + Number(r.score), 0) / results.length).toFixed(1)
+    : null;
+
+  return (
+    <div className="min-h-screen bg-stone-50 text-stone-900">
+      <div className="bg-violet-950 text-violet-50 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🏅</span>
+          <div><div className="font-serif text-lg leading-tight">Aduana Model JHS</div>
+          <div className="text-[11px] text-violet-300 -mt-0.5">Student Portal</div></div>
         </div>
-        <div class="flex gap-4 items-start">
-          <div class="bg-violet-900 text-white rounded-lg text-center px-3 py-2 leading-none">
-            <div class="text-xs">SEP</div><div class="text-lg font-serif font-semibold">22</div>
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-violet-200">{user.name} · Student</span>
+          <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white">Change password</button>
+          <button onClick={onSignOut} className="text-violet-300 hover:text-white">Sign out</button>
+        </div>
+      </div>
+      {showChangePw && <ChangePasswordModal token={token} onClose={() => setShowChangePw(false)} showToastFn={showToast} />}
+      {toast && <div className={`fixed bottom-4 right-4 px-4 py-2.5 rounded-lg shadow-lg text-sm text-white z-50 ${toast.kind === "error" ? "bg-rose-700" : toast.kind === "success" ? "bg-emerald-700" : "bg-stone-800"}`}>{toast.msg}</div>}
+
+      <div className="max-w-3xl mx-auto p-4 md:p-6">
+        <h1 className="font-serif text-2xl mb-1">Welcome back, {user.name.split(" ")[0]}!</h1>
+        {me && <div className="text-sm text-stone-500 mb-4">{me.class} · Admission No. {me.admission_no}</div>}
+
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <div className="bg-white border border-stone-200 rounded-xl p-4 text-center">
+            <div className="text-2xl font-serif">{results ? results.length : "—"}</div>
+            <div className="text-xs text-stone-500">Published Results</div>
           </div>
-          <div><div class="font-medium">Parent-Teacher Conference</div><div class="text-sm text-violet-950/60">All classes, 2:00 PM</div></div>
-        </div>
-        <div class="flex gap-4 items-start">
-          <div class="bg-violet-900 text-white rounded-lg text-center px-3 py-2 leading-none">
-            <div class="text-xs">OCT</div><div class="text-lg font-serif font-semibold">05</div>
+          <div className="bg-white border border-stone-200 rounded-xl p-4 text-center">
+            <div className="text-2xl font-serif">{average ?? "—"}</div>
+            <div className="text-xs text-stone-500">Average Score</div>
           </div>
-          <div><div class="font-medium">Inter-House Sports Competition</div><div class="text-sm text-violet-950/60">School Park Grounds</div></div>
+        </div>
+
+        <h2 className="font-serif text-lg mb-2">My Results</h2>
+        {results === null ? (
+          <div className="text-sm text-stone-400">Loading…</div>
+        ) : results.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-xl p-4 text-sm text-stone-500">No published results yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {results.map((r, i) => (
+              <div key={i} className="bg-white border border-stone-200 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{r.subject}</div>
+                  <div className="text-xs text-stone-500">{r.term} {r.academic_year} · Published {fmt(r.published_at)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-serif">{r.score}</div>
+                  {r.grade && <div className="text-xs text-stone-500">Grade {r.grade}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState(null);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
+  const [exams, setExams] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [exam, setExam] = useState(null);
+  const [tab, setTab] = useState("marks");
+  const [auditLog, setAuditLog] = useState([]);
+  const [versions, setVersions] = useState([]);
+  const [reportCards, setReportCards] = useState([]);
+  const [pendingCorrection, setPendingCorrection] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [myAssignments, setMyAssignments] = useState([]);
+  const [currentTerm, setCurrentTerm] = useState(null);
+  const [selectedAssignment, setSelectedAssignment] = useState("");
+  const [newStudent, setNewStudent] = useState({ fullName: "", admissionNo: "" });
+  const [marksEdit, setMarksEdit] = useState(null);
+  const [correctionMode, setCorrectionMode] = useState(false);
+  const [modal, setModal] = useState(null);
+  const [reason, setReason] = useState("");
+  const [view, setView] = useState("exams");
+  const [staffList, setStaffList] = useState([]);
+  const [classList, setClassList] = useState([]);
+  const [newStaff, setNewStaff] = useState({ name: "", email: "", password: "", role: "teacher" });
+  const [newClass, setNewClass] = useState({ name: "", academicYear: "2026" });
+  const [termForm, setTermForm] = useState({ term: "Term 2", academicYear: "2026" });
+  const [showChangePw, setShowChangePw] = useState(false);
+
+  async function updateTermSettings() {
+    if (!termForm.term || !termForm.academicYear) return showToast("Enter both term and year.", "error");
+    try {
+      const updated = await api("/api/admin/settings/term", token, { method: "PUT", body: JSON.stringify({ term: termForm.term, academicYear: Number(termForm.academicYear) }) });
+      setCurrentTerm(updated);
+      showToast("Current term updated.", "success");
+    } catch (e) { showToast(e.message, "error"); }
+  }
+  const [assignSubject, setAssignSubject] = useState({});
+
+  async function loadAdminData() {
+    try {
+      const [staff, classes] = await Promise.all([
+        api("/api/admin/users", token),
+        api("/api/admin/classes", token),
+      ]);
+      setStaffList(staff);
+      setClassList(classes);
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  useEffect(() => { if (token && view === "admin") loadAdminData(); }, [token, view]);
+
+  async function createStaff() {
+    if (!newStaff.name || !newStaff.email || !newStaff.password) return showToast("Fill in name, email, and password.", "error");
+    try {
+      await api("/api/admin/users", token, { method: "POST", body: JSON.stringify(newStaff) });
+      showToast("Staff account created.", "success");
+      setNewStaff({ name: "", email: "", password: "", role: "teacher" });
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function deactivateStaff(id) {
+    try {
+      await api(`/api/admin/users/${id}/deactivate`, token, { method: "PATCH" });
+      showToast("Account deactivated.", "success");
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  const [resetPwFor, setResetPwFor] = useState(null);
+  const [resetPwValue, setResetPwValue] = useState("");
+
+  async function resetAccountPassword(id) {
+    if (!resetPwValue || resetPwValue.length < 8) return showToast("New password must be at least 8 characters.", "error");
+    try {
+      await api(`/api/admin/users/${id}/reset-password`, token, { method: "PATCH", body: JSON.stringify({ newPassword: resetPwValue }) });
+      showToast("Password reset.", "success");
+      setResetPwFor(null); setResetPwValue("");
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function createClass() {
+    if (!newClass.name) return showToast("Enter a class name.", "error");
+    try {
+      await api("/api/admin/classes", token, { method: "POST", body: JSON.stringify({ ...newClass, academicYear: Number(newClass.academicYear) }) });
+      showToast("Class created.", "success");
+      setNewClass({ name: "", academicYear: "2026" });
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function setFormMaster(classId, teacherId) {
+    try {
+      await api(`/api/admin/classes/${classId}/form-master`, token, { method: "PATCH", body: JSON.stringify({ teacherId }) });
+      showToast("Form master set.", "success");
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function assignSubjectTeacher(classId) {
+    const { subject, teacherId } = assignSubject[classId] || {};
+    if (!subject || !teacherId) return showToast("Pick a subject and teacher.", "error");
+    try {
+      await api(`/api/admin/classes/${classId}/subjects`, token, { method: "POST", body: JSON.stringify({ subject, teacherId }) });
+      showToast("Subject teacher assigned.", "success");
+      setAssignSubject({ ...assignSubject, [classId]: {} });
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function removeSubjectAssignment(classId, subject) {
+    try {
+      await api(`/api/admin/classes/${classId}/subjects/${encodeURIComponent(subject)}`, token, { method: "DELETE" });
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  const [parentsList, setParentsList] = useState([]);
+  const [newParent, setNewParent] = useState({ name: "", email: "", password: "", admissionNos: "" });
+
+  async function loadParents() {
+    try { setParentsList(await api("/api/admin/parents", token)); } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function createParent() {
+    if (!newParent.name || !newParent.email || !newParent.password) return showToast("Fill in name, email, and password.", "error");
+    const admissionNos = newParent.admissionNos.split(",").map((s) => s.trim()).filter(Boolean);
+    try {
+      const result = await api("/api/admin/parents", token, { method: "POST", body: JSON.stringify({ ...newParent, admissionNos }) });
+      showToast(`Parent account created. Linked: ${result.linked.join(", ") || "none yet"}.${result.notFound.length ? " Not found: " + result.notFound.join(", ") : ""}`, result.notFound.length ? "error" : "success");
+      setNewParent({ name: "", email: "", password: "", admissionNos: "" });
+      loadParents();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  const [allStudents, setAllStudents] = useState([]);
+  const [credentialForm, setCredentialForm] = useState({});
+  const [showCredentialFor, setShowCredentialFor] = useState(null);
+
+  async function loadAllStudents() {
+    try { setAllStudents(await api("/api/students", token)); } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function issueCredentials(studentId) {
+    const form = credentialForm[studentId] || {};
+    if (!form.email || !form.password) return showToast("Enter an email and password.", "error");
+    try {
+      await api(`/api/admin/students/${studentId}/set-credentials`, token, { method: "POST", body: JSON.stringify(form) });
+      showToast("Login issued.", "success");
+      setShowCredentialFor(null);
+      setCredentialForm({ ...credentialForm, [studentId]: {} });
+      loadAllStudents();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  useEffect(() => { if (token && view === "admin") { loadParents(); loadAllStudents(); } }, [token, view]);
+
+  function showToast(msg, kind = "info") { setToast({ msg, kind }); setTimeout(() => setToast(null), 3500); }
+
+  async function signIn() {
+    if (!email.trim() || !password) return setLoginError("Enter your email and password.");
+    setLoggingIn(true); setLoginError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Sign-in failed.");
+      setUser(json.user); setToken(json.token);
+    } catch (e) {
+      setLoginError(e.message);
+    }
+    setLoggingIn(false);
+  }
+  function signOut() { setToken(null); setUser(null); setEmail(""); setPassword(""); setExams([]); setExam(null); setSelectedId(null); setView("exams"); }
+
+  const loadExams = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try { setExams(await api("/api/exams", token)); } catch (e) { showToast(e.message, "error"); }
+    setLoading(false);
+  }, [token]);
+
+  const loadExamDetail = useCallback(async (id) => {
+    if (!token || !id) return;
+    setLoading(true);
+    try {
+      const data = await api(`/api/exams/${id}`, token);
+      setExam(data); setMarksEdit(null);
+      const s = await api(`/api/students?class=${encodeURIComponent(data.class)}`, token);
+      setStudents(s);
+      if (["administrator", "headmaster", "super_administrator"].includes(user?.role)) {
+        api(`/api/exams/${id}/audit-log`, token).then(setAuditLog).catch(() => {});
+      }
+      api(`/api/exams/${id}/versions`, token).then(setVersions).catch(() => {});
+      api(`/api/exams/${id}/report-cards`, token).then(setReportCards).catch(() => setReportCards([]));
+      api(`/api/exams/${id}/pending-correction`, token).then(setPendingCorrection).catch(() => setPendingCorrection(null));
+    } catch (e) { showToast(e.message, "error"); }
+    setLoading(false);
+  }, [token, user]);
+
+  useEffect(() => { if (token) loadExams(); }, [token, loadExams]);
+  useEffect(() => { if (selectedId) loadExamDetail(selectedId); }, [selectedId, loadExamDetail]);
+
+  async function createExam() {
+    if (!selectedAssignment) return showToast("Pick a class and subject.", "error");
+    const [classId, subject] = selectedAssignment.split("|||");
+    try {
+      const created = await api("/api/exams", token, { method: "POST", body: JSON.stringify({ classId, subject }) });
+      showToast("Exam created.", "success");
+      setSelectedAssignment("");
+      await loadExams(); setSelectedId(created.id);
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  const loadTeacherSetupData = useCallback(async () => {
+    if (!token) return;
+    try {
+      setCurrentTerm(await api("/api/exams/settings/term", token));
+      if (user?.role === "teacher") setMyAssignments(await api("/api/exams/my-assignments", token));
+    } catch (e) { /* non-fatal */ }
+  }, [token, user]);
+
+  useEffect(() => { loadTeacherSetupData(); }, [loadTeacherSetupData]);
+  useEffect(() => { if (currentTerm) setTermForm({ term: currentTerm.term, academicYear: String(currentTerm.academic_year) }); }, [currentTerm]);
+
+  async function addStudent() {
+    if (!newStudent.fullName || !newStudent.admissionNo) return showToast("Enter name and admission number.", "error");
+    try {
+      await api("/api/students", token, { method: "POST", body: JSON.stringify({ ...newStudent, class: exam.class }) });
+      setNewStudent({ fullName: "", admissionNo: "" });
+      setStudents(await api(`/api/students?class=${encodeURIComponent(exam.class)}`, token));
+      showToast("Student added.", "success");
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  function startMarksEdit() {
+    const existing = new Map(exam.marks.map((m) => [m.student_id, m]));
+    setMarksEdit(students.map((s) => {
+      const record = existing.get(s.id);
+      return {
+        student_id: s.id,
+        name: s.full_name,
+        class_score: record?.class_score ?? "",
+        exam_score: record?.exam_score ?? ""
+      };
+    }));
+  }
+  function startCorrection() { startMarksEdit(); setCorrectionMode(true); }
+
+  async function decideCorrection(approve, reasonText) {
+    const path = user.role === "administrator" ? "admin-decision" : "headmaster-decision";
+    try {
+      await api(`/api/exams/corrections/${pendingCorrection.id}/${path}`, token, {
+        method: "POST", body: JSON.stringify({ approve, reason: reasonText || undefined }),
+      });
+      showToast(approve ? "Correction approved." : "Correction rejected.", "success");
+      await loadExamDetail(exam.id);
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  // Handle Input Changes with strict clamping (0-50 max)
+  function handleScoreChange(index, field, value) {
+    if (!marksEdit) return;
+    let val = value;
+    if (val !== "") {
+      let num = Number(val);
+      if (isNaN(num)) return;
+      if (num > 50) num = 50;
+      if (num < 0) num = 0;
+      val = num;
+    }
+    const updated = [...marksEdit];
+    updated[index] = { ...updated[index], [field]: val };
+    setMarksEdit(updated);
+  }
+
+  async function saveMarks() {
+    // Final check for values exceeding 50
+    const invalid = marksEdit.some((m) => Number(m.class_score) > 50 || Number(m.exam_score) > 50);
+    if (invalid) {
+      showToast("Scores cannot exceed 50 marks.", "error");
+      return;
+    }
+
+    const marks = marksEdit
+      .filter((m) => m.class_score !== "" || m.exam_score !== "")
+      .map((m) => ({
+        student_id: m.student_id,
+        class_score: Number(m.class_score || 0),
+        exam_score: Number(m.exam_score || 0)
+      }));
+
+    if (correctionMode) {
+      setModal("file_correction");
+      return;
+    }
+
+    try {
+      await api(`/api/exams/${exam.id}/marks`, token, {
+        method: "PUT",
+        body: JSON.stringify({ marks })
+      });
+      showToast("Marks saved successfully.", "success");
+      await loadExamDetail(exam.id);
+    } catch (e) {
+      showToast(e.message, "error");
+    }
+  }
+
+  const [uploadResult, setUploadResult] = useState(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function uploadStudentsFile(fileInput) {
+    const file = fileInput.files[0];
+    if (!file) return;
+    setUploading(true); setUploadResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("class", exam.class);
+      const res = await fetch(`${API_BASE}/api/students/bulk-upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Upload failed.");
+      setUploadResult(json);
+      setStudents(await api(`/api/students?class=${encodeURIComponent(exam.class)}`, token));
+      showToast(`${json.added.length} student(s) added.`, "success");
+    } catch (e) { showToast(e.message, "error"); }
+    setUploading(false);
+    fileInput.value = "";
+  }
+
+  const [marksUploadResult, setMarksUploadResult] = useState(null);
+  const [marksUploading, setMarksUploading] = useState(false);
+
+  async function uploadMarksFile(fileInput) {
+    const file = fileInput.files[0];
+    if (!file) return;
+    setMarksUploading(true); setMarksUploadResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`${API_BASE}/api/exams/${exam.id}/marks/bulk-upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Upload failed.");
+      setMarksUploadResult(json);
+      showToast(`${json.updated.length} mark(s) updated.`, "success");
+      await loadExamDetail(exam.id);
+    } catch (e) { showToast(e.message, "error"); }
+    setMarksUploading(false);
+    fileInput.value = "";
+  }
+
+  async function act(path, method = "POST", body) {
+    try {
+      await api(`/api/exams/${exam.id}${path}`, token, { method, body: body ? JSON.stringify(body) : undefined });
+      showToast("Done.", "success");
+      await Promise.all([loadExamDetail(exam.id), loadExams()]);
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  function openReasonModal(type) { setReason(""); setModal(type); }
+  async function confirmModal() {
+    if (!reason.trim()) return showToast("A reason is required.", "error");
+    if (modal === "admin_return") await act("/admin-return", "POST", { reason });
+    if (modal === "hm_return") await act("/hm-return", "POST", { reason });
+    if (modal === "reject_correction") await decideCorrection(false, reason);
+    if (modal === "emergency_unlock") {
+      try {
+        await api(`/api/super-admin/exams/${exam.id}/emergency-unlock`, token, { method: "POST", body: JSON.stringify({ reason }) });
+        showToast("Exam unlocked.", "success");
+        await Promise.all([loadExamDetail(exam.id), loadExams()]);
+      } catch (e) { showToast(e.message, "error"); }
+    }
+    if (modal === "file_correction") {
+      const marks = marksEdit
+        .filter((m) => m.class_score !== "" || m.exam_score !== "")
+        .map((m) => ({
+          student_id: m.student_id,
+          class_score: Number(m.class_score || 0),
+          exam_score: Number(m.exam_score || 0)
+        }));
+      try {
+        await api(`/api/exams/${exam.id}/corrections`, token, { method: "POST", body: JSON.stringify({ reason, proposedMarks: marks }) });
+        showToast("Correction request filed.", "success");
+        setMarksEdit(null); setCorrectionMode(false);
+        await loadExamDetail(exam.id);
+      } catch (e) { showToast(e.message, "error"); }
+    }
+    setModal(null);
+  }
+
+  // Calculate Positions based on Total Score
+  const computeRowsWithPositions = () => {
+    if (!exam) return [];
+    const sourceRows = marksEdit || exam.marks.map((m) => ({
+      student_id: m.student_id,
+      name: m.full_name,
+      class_score: m.class_score,
+      exam_score: m.exam_score,
+      score: m.score
+    }));
+
+    const computed = sourceRows.map((r) => {
+      const c = Number(r.class_score) || 0;
+      const e = Number(r.exam_score) || 0;
+      const total = r.score !== undefined && r.score !== null ? Number(r.score) : (c + e);
+      return { ...r, totalScore: total };
+    });
+
+    // Rank calculation (Dense Ranking)
+    const sortedScores = Array.from(new Set(computed.map((r) => r.totalScore))).sort((a, b) => b - a);
+    return computed.map((r) => {
+      const rank = sortedScores.indexOf(r.totalScore) + 1;
+      return { ...r, position: getOrdinalSuffix(rank) };
+    });
+  };
+
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
+        <div className="max-w-sm w-full">
+          <div className="flex items-center gap-2 mb-6 justify-center">
+            <span className="text-2xl">🏅</span>
+            <span className="font-serif text-xl text-violet-950">Aduana Model JHS</span>
+          </div>
+          <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm">
+            <h1 className="font-serif text-lg text-stone-900 mb-1">Sign in to Results Portal</h1>
+            <p className="text-xs text-stone-500 mb-4">Enter your school account details below.</p>
+            {loginError && <div className="bg-rose-50 text-rose-800 border border-rose-200 text-xs p-2.5 rounded-lg mb-3">{loginError}</div>}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-stone-700 mb-1">Email Address</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. teacher@aduana.edu" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-800" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-700 mb-1">Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-800" />
+              </div>
+              <button onClick={signIn} disabled={loggingIn} className="w-full bg-violet-900 text-white font-medium py-2 rounded-lg text-sm hover:bg-violet-950 transition disabled:opacity-50">
+                {loggingIn ? "Signing in…" : "Sign In"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
-</section>
+    );
+  }
 
-<!-- ADMISSIONS -->
-<section id="admissions" class="bg-violet-900 text-white py-20">
-  <div class="max-w-6xl mx-auto px-4 md:px-6 grid md:grid-cols-2 gap-10 items-center">
-    <div>
-      <p class="uppercase tracking-[0.15em] text-gold-light text-xs font-semibold mb-2">Admissions</p>
-      <h2 class="font-serif text-3xl md:text-4xl font-semibold mb-4">Join the Aduana Model JHS family.</h2>
-      <p class="text-violet-100 mb-6">Admissions for the 2026/27 academic year are now open for JHS 1. Places are limited and offered on a first-come basis.</p>
-      <a href="#contact" class="inline-block bg-gold hover:bg-gold-light text-violet-950 font-semibold px-6 py-3 rounded-full transition">Start Your Application</a>
-    </div>
-    <div class="space-y-4">
-      <div class="flex gap-3"><span class="text-gold font-serif font-semibold">1</span><span>Visit the school office or contact us to collect an admission form.</span></div>
-      <div class="flex gap-3"><span class="text-gold font-serif font-semibold">2</span><span>Submit the completed form with your child's birth certificate and previous school report.</span></div>
-      <div class="flex gap-3"><span class="text-gold font-serif font-semibold">3</span><span>Attend a brief placement interview with the Headmaster.</span></div>
-      <div class="flex gap-3"><span class="text-gold font-serif font-semibold">4</span><span>Receive confirmation and your child's official admission number.</span></div>
-    </div>
-  </div>
-</section>
+  if (user?.role === "parent") return <ParentDashboard user={user} token={token} onSignOut={signOut} />;
+  if (user?.role === "student") return <StudentDashboard user={user} token={token} onSignOut={signOut} />;
 
-<!-- GALLERY -->
-<section id="gallery" class="max-w-6xl mx-auto px-4 md:px-6 py-20">
-  <p class="uppercase tracking-[0.15em] text-gold text-xs font-semibold mb-2 text-center">Life at Aduana</p>
-  <h2 class="font-serif text-3xl md:text-4xl text-violet-950 font-semibold mb-10 text-center">Gallery</h2>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-    <div class="placeholder-tile rounded-xl aspect-square"></div>
-    <div class="placeholder-tile rounded-xl aspect-square"></div>
-    <div class="placeholder-tile rounded-xl aspect-square"></div>
-    <div class="placeholder-tile rounded-xl aspect-square"></div>
-    <div class="placeholder-tile rounded-xl aspect-square"></div>
-    <div class="placeholder-tile rounded-xl aspect-square"></div>
-    <div class="placeholder-tile rounded-xl aspect-square"></div>
-    <div class="placeholder-tile rounded-xl aspect-square"></div>
-  </div>
-  <p class="text-center text-xs text-violet-900/50 mt-4">Photos coming soon — replace these tiles with real school photography.</p>
-</section>
+  const computedMarkRows = computeRowsWithPositions();
+  const hasInvalidScore = marksEdit && marksEdit.some((m) => Number(m.class_score) > 50 || Number(m.exam_score) > 50);
 
-<!-- TESTIMONIALS -->
-<section class="bg-violet-100 py-20">
-  <div class="max-w-6xl mx-auto px-4 md:px-6">
-    <h2 class="font-serif text-3xl md:text-4xl text-violet-950 font-semibold mb-10 text-center">What Families Say</h2>
-    <div class="grid md:grid-cols-3 gap-6">
-      <div class="bg-white rounded-2xl p-6 border border-violet-200">
-        <p class="text-violet-950/80 text-sm mb-4">"I can check my daughter's results the moment they're published — no more waiting for report card day."</p>
-        <div class="text-sm font-medium text-violet-900">— A. Owusu, Parent</div>
-      </div>
-      <div class="bg-white rounded-2xl p-6 border border-violet-200">
-        <p class="text-violet-950/80 text-sm mb-4">"The teachers genuinely know my son. He's grown so much in confidence since JHS 1."</p>
-        <div class="text-sm font-medium text-violet-900">— B. Mensah, Parent</div>
-      </div>
-      <div class="bg-white rounded-2xl p-6 border border-violet-200">
-        <p class="text-violet-950/80 text-sm mb-4">"Every mark is reviewed twice before it's ever official. Parents trust that, and so do I."</p>
-        <div class="text-sm font-medium text-violet-900">— Headmaster's Office</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- CONTACT -->
-<section id="contact" class="max-w-6xl mx-auto px-4 md:px-6 py-20 grid md:grid-cols-2 gap-10">
-  <div>
-    <p class="uppercase tracking-[0.15em] text-gold text-xs font-semibold mb-2">Get in Touch</p>
-    <h2 class="font-serif text-3xl md:text-4xl text-violet-950 font-semibold mb-6">Contact Us</h2>
-    <div class="space-y-3 text-violet-950/80 text-sm">
-      <div>📍 Aduana Model JHS, Kasoa, Central Region, Ghana</div>
-      <div>📞 +233 55 123 4567</div>
-      <div>✉️ info@aduanamodel.edu.gh</div>
-      <div>🕐 Monday – Friday, 7:00 AM – 4:00 PM</div>
-    </div>
-    <div class="placeholder-tile rounded-xl mt-6 aspect-video flex items-center justify-center text-violet-900/40 text-sm">Map placeholder</div>
-  </div>
-  <div class="bg-white rounded-2xl p-6 border border-violet-200">
-    <h3 class="font-serif text-lg text-violet-900 font-semibold mb-4">Send a Message</h3>
-    <form onsubmit="event.preventDefault(); window.location.href='mailto:info@aduanamodel.edu.gh?subject=' + encodeURIComponent(this.subject.value) + '&body=' + encodeURIComponent('From: ' + this.name.value + ' (' + this.email.value + ')\n\n' + this.message.value);">
-      <input name="name" required placeholder="Your name" class="w-full border border-violet-200 rounded-lg px-3 py-2 text-sm mb-3" />
-      <input name="email" type="email" required placeholder="Your email" class="w-full border border-violet-200 rounded-lg px-3 py-2 text-sm mb-3" />
-      <input name="subject" required placeholder="Subject" class="w-full border border-violet-200 rounded-lg px-3 py-2 text-sm mb-3" />
-      <textarea name="message" required placeholder="Message" rows="4" class="w-full border border-violet-200 rounded-lg px-3 py-2 text-sm mb-3"></textarea>
-      <button type="submit" class="w-full bg-violet-900 hover:bg-violet-950 text-white font-medium py-2.5 rounded-lg transition">Send Message</button>
-    </form>
-  </div>
-</section>
-
-<!-- FOOTER -->
-<footer class="bg-violet-950 text-violet-200">
-  <div class="kente-stripe"></div>
-  <div class="max-w-6xl mx-auto px-4 md:px-6 py-10 flex flex-col md:flex-row justify-between gap-6 text-sm">
-    <div>
-      <div class="flex items-center gap-2 mb-2">
-        <span class="text-xl">🏅</span>
-        <span class="font-serif text-white font-semibold">Aduana Model JHS</span>
-      </div>
-      <p class="text-violet-300 max-w-xs">Empowering students, connecting families, building the future — in Kasoa, Ghana.</p>
-    </div>
-    <div class="flex gap-10">
-      <div>
-        <div class="text-white font-medium mb-2">Quick Links</div>
-        <div class="space-y-1 text-violet-300">
-          <a href="#about" class="block hover:text-gold-light">About</a>
-          <a href="#academics" class="block hover:text-gold-light">Academics</a>
-          <a href="#admissions" class="block hover:text-gold-light">Admissions</a>
+  return (
+    <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col">
+      {/* Header */}
+      <header className="bg-violet-950 text-violet-50 border-b border-violet-900 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">🏅</span>
+          <div>
+            <h1 className="font-serif text-lg leading-tight">Aduana Model JHS</h1>
+            <p className="text-[11px] text-violet-300">Results Workflow Portal</p>
+          </div>
         </div>
-      </div>
-      <div>
-        <div class="text-white font-medium mb-2">Portal</div>
-        <div class="space-y-1 text-violet-300">
-          <a href="portal.html" class="block hover:text-gold-light">Staff / Parent / Student Login</a>
+        <div className="flex items-center gap-4 text-sm">
+          {["administrator", "super_administrator"].includes(user?.role) && (
+            <div className="flex bg-violet-900 rounded-lg p-0.5 text-xs">
+              <button onClick={() => setView("exams")} className={`px-2.5 py-1 rounded-md font-medium ${view === "exams" ? "bg-gold text-violet-950" : "text-violet-200"}`}>Exams Workflow</button>
+              <button onClick={() => setView("admin")} className={`px-2.5 py-1 rounded-md font-medium ${view === "admin" ? "bg-gold text-violet-950" : "text-violet-200"}`}>Admin Setup</button>
+            </div>
+          )}
+          <span className="text-violet-200 text-xs hidden sm:inline">{user?.name} ({user?.role})</span>
+          <button onClick={() => setShowChangePw(true)} className="text-xs text-violet-300 hover:text-white">Change Password</button>
+          <button onClick={signOut} className="text-xs text-violet-300 hover:text-white font-medium">Sign Out</button>
         </div>
-      </div>
-    </div>
-  </div>
-  <div class="text-center text-xs text-violet-400 pb-6">© 2026 Aduana Model JHS. All rights reserved.</div>
-</footer>
+      </header>
 
+      {showChangePw && <ChangePasswordModal token={token} onClose={() => setShowChangePw(false)} showToastFn={showToast} />}
+      {toast && <div className={`fixed bottom-4 right-4 px-4 py-2.5 rounded-lg shadow-lg text-sm text-white z-50 ${toast.kind === "error" ? "bg-rose-700" : toast.kind === "success" ? "bg-emerald-700" : "bg-stone-800"}`}>{toast.msg}</div>}
+
+      {/* Main Body */}
+      {view === "admin" ? (
+        <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6 space-y-6">
+          <h2 className="font-serif text-2xl font-bold">Admin Portal Setup</h2>
+          
+          {/* Term Settings */}
+          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+            <h3 className="font-serif text-lg font-semibold mb-2">Current Active Term</h3>
+            <div className="flex flex-wrap gap-3 items-center">
+              <input type="text" value={termForm.term} onChange={(e) => setTermForm({ ...termForm, term: e.target.value })} placeholder="Term e.g. Term 1" className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
+              <input type="number" value={termForm.academicYear} onChange={(e) => setTermForm({ ...termForm, academicYear: e.target.value })} placeholder="Academic Year e.g. 2026" className="border border-stone-300 rounded px-3 py-1.5 text-sm w-32" />
+              <Btn kind="primary" onClick={updateTermSettings}>Update Active Term</Btn>
+            </div>
+          </div>
+
+          {/* Classes & Assignments */}
+          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+            <h3 className="font-serif text-lg font-semibold mb-3">Manage Classes & Subject Teachers</h3>
+            <div className="flex gap-2 mb-4">
+              <input type="text" value={newClass.name} onChange={(e) => setNewClass({ ...newClass, name: e.target.value })} placeholder="Class Name (e.g. JHS 1)" className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
+              <Btn kind="primary" onClick={createClass}>Add Class</Btn>
+            </div>
+            <div className="space-y-4">
+              {classList.map((c) => (
+                <div key={c.id} className="border border-stone-200 rounded-lg p-4 bg-stone-50">
+                  <div className="font-medium text-stone-900 mb-2">{c.name} (Year: {c.academic_year})</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-xs font-semibold uppercase text-stone-500 block mb-1">Form Master</span>
+                      <select value={c.form_master_id || ""} onChange={(e) => setFormMaster(c.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 text-sm w-full bg-white">
+                        <option value="">Select Form Master...</option>
+                        {staffList.filter(s => s.role === "teacher").map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold uppercase text-stone-500 block mb-1">Assign Subject Teacher</span>
+                      <div className="flex gap-1">
+                        <input type="text" placeholder="Subject Name" value={assignSubject[c.id]?.subject || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], subject: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-sm w-1/2 bg-white" />
+                        <select value={assignSubject[c.id]?.teacherId || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], teacherId: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-sm w-1/2 bg-white">
+                          <option value="">Select Teacher...</option>
+                          {staffList.filter(s => s.role === "teacher").map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        <Btn kind="primary" onClick={() => assignSubjectTeacher(c.id)}>+</Btn>
+                      </div>
+                    </div>
+                  </div>
+                  {c.subjects && c.subjects.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {c.subjects.map(s => (
+                        <span key={s.subject} className="bg-white border border-stone-300 px-2 py-1 rounded text-xs flex items-center gap-1">
+                          <strong>{s.subject}:</strong> {s.teacher_name}
+                          <button onClick={() => removeSubjectAssignment(c.id, s.subject)} className="text-rose-600 hover:text-rose-800 font-bold ml-1">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Staff Accounts */}
+          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+            <h3 className="font-serif text-lg font-semibold mb-3">Manage Staff Accounts</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
+              <input type="text" placeholder="Full Name" value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
+              <input type="email" placeholder="Email Address" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
+              <input type="password" placeholder="Password" value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
+              <div className="flex gap-2">
+                <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="border border-stone-300 rounded px-2 py-1.5 text-sm flex-1">
+                  <option value="teacher">Teacher</option>
+                  <option value="administrator">Administrator</option>
+                  <option value="headmaster">Headmaster</option>
+                </select>
+                <Btn kind="primary" onClick={createStaff}>Create</Btn>
+              </div>
+            </div>
+            <div className="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden text-sm">
+              {staffList.map(s => (
+                <div key={s.id} className="p-3 flex items-center justify-between bg-white">
+                  <div>
+                    <span className="font-medium text-stone-900">{s.name}</span>
+                    <span className="text-stone-500 text-xs ml-2">({s.email})</span>
+                    <span className="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-stone-100 text-stone-700 uppercase">{s.role}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {resetPwFor === s.id ? (
+                      <div className="flex gap-1 items-center">
+                        <input type="password" placeholder="New pass" value={resetPwValue} onChange={(e) => setResetPwValue(e.target.value)} className="border border-stone-300 rounded px-2 py-1 text-xs w-28" />
+                        <Btn kind="primary" onClick={() => resetAccountPassword(s.id)}>Save</Btn>
+                        <button onClick={() => setResetPwFor(null)} className="text-xs text-stone-500">Cancel</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setResetPwFor(s.id)} className="text-xs text-violet-700 hover:underline">Reset Pass</button>
+                    )}
+                    {s.is_active ? (
+                      <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-600 hover:underline">Deactivate</button>
+                    ) : (
+                      <span className="text-xs text-stone-400">Inactive</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Parent Accounts */}
+          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+            <h3 className="font-serif text-lg font-semibold mb-3">Manage Parent Accounts</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
+              <input type="text" placeholder="Parent Full Name" value={newParent.name} onChange={(e) => setNewParent({ ...newParent, name: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
+              <input type="email" placeholder="Email Address" value={newParent.email} onChange={(e) => setNewParent({ ...newParent, email: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
+              <input type="password" placeholder="Password" value={newParent.password} onChange={(e) => setNewParent({ ...newParent, password: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
+              <div className="flex gap-2">
+                <input type="text" placeholder="Admission Nos (comma-sep)" value={newParent.admissionNos} onChange={(e) => setNewParent({ ...newParent, admissionNos: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm flex-1" />
+                <Btn kind="primary" onClick={createParent}>Create</Btn>
+              </div>
+            </div>
+            <div className="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden text-sm">
+              {parentsList.map(p => (
+                <div key={p.id} className="p-3 flex items-center justify-between bg-white">
+                  <div>
+                    <span className="font-medium text-stone-900">{p.name}</span>
+                    <span className="text-stone-500 text-xs ml-2">({p.email})</span>
+                  </div>
+                  <div className="text-xs text-stone-500">
+                    Linked Children: {p.children && p.children.length > 0 ? p.children.map(c => `${c.full_name} (${c.admission_no})`).join(", ") : "None"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Student Portal Accounts */}
+          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+            <h3 className="font-serif text-lg font-semibold mb-3">Student Portal Credentials</h3>
+            <div className="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden text-sm max-h-96 overflow-y-auto">
+              {allStudents.map(st => (
+                <div key={st.id} className="p-3 flex items-center justify-between bg-white">
+                  <div>
+                    <span className="font-medium text-stone-900">{st.full_name}</span>
+                    <span className="text-stone-500 text-xs ml-2">({st.class} · Adm: {st.admission_no})</span>
+                    {st.email && <span className="ml-2 text-xs text-emerald-700 font-medium">Account Issued ({st.email})</span>}
+                  </div>
+                  <div>
+                    {showCredentialFor === st.id ? (
+                      <div className="flex gap-1 items-center">
+                        <input type="email" placeholder="Email" value={credentialForm[st.id]?.email || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [st.id]: { ...credentialForm[st.id], email: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-xs w-32" />
+                        <input type="password" placeholder="Pass" value={credentialForm[st.id]?.password || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [st.id]: { ...credentialForm[st.id], password: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-xs w-24" />
+                        <Btn kind="primary" onClick={() => issueCredentials(st.id)}>Save</Btn>
+                        <button onClick={() => setShowCredentialFor(null)} className="text-xs text-stone-500">Cancel</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setShowCredentialFor(st.id)} className="text-xs text-violet-700 hover:underline">
+                        {st.email ? "Reset Account" : "Issue Account"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
+      ) : (
+        <main className="flex-1 flex flex-col md:flex-row max-w-7xl w-full mx-auto p-4 md:p-6 gap-6">
+          {/* Sidebar */}
+          <aside className="w-full md:w-72 flex-shrink-0 space-y-4">
+            {user?.role === "teacher" && (
+              <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                <h2 className="font-serif text-sm font-semibold text-stone-900 mb-2">Create New Exam</h2>
+                <select value={selectedAssignment} onChange={(e) => setSelectedAssignment(e.target.value)} className="w-full border border-stone-300 rounded-lg p-2 text-xs mb-2 bg-white">
+                  <option value="">Select Class & Subject...</option>
+                  {myAssignments.map((a, i) => (
+                    <option key={i} value={`${a.class_id}|||${a.subject}`}>{a.class_name} — {a.subject}</option>
+                  ))}
+                </select>
+                <Btn kind="primary" onClick={createExam} disabled={!selectedAssignment}>Start Exam Sheet</Btn>
+              </div>
+            )}
+
+            <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+              <h2 className="font-serif text-sm font-semibold text-stone-900 mb-3">Exams List</h2>
+              {loading && !exams.length ? (
+                <div className="text-xs text-stone-400">Loading exams…</div>
+              ) : exams.length === 0 ? (
+                <div className="text-xs text-stone-500">No exams created yet.</div>
+              ) : (
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                  {exams.map((e) => (
+                    <div key={e.id} onClick={() => setSelectedId(e.id)}
+                      className={`p-3 rounded-lg border text-xs cursor-pointer transition ${selectedId === e.id ? "border-violet-800 bg-violet-50/50" : "border-stone-200 hover:border-stone-300 bg-white"}`}>
+                      <div className="font-semibold text-stone-900">{e.subject}</div>
+                      <div className="text-stone-500 mt-0.5">{e.class} · {e.term} {e.academic_year}</div>
+                      <div className="mt-2 flex items-center justify-between">
+                        <Badge status={e.status} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
+
+          {/* Main Detail Area */}
+          <section className="flex-1 bg-white border border-stone-200 rounded-xl p-5 md:p-6 shadow-sm">
+            {!exam ? (
+              <div className="h-64 flex flex-col items-center justify-center text-stone-400 text-sm">
+                <span>Select an exam sheet from the left sidebar to view details.</span>
+              </div>
+            ) : (
+              <div>
+                {/* Exam Title & Meta Header */}
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-stone-200 pb-4 mb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-serif text-2xl font-bold text-stone-900">{exam.subject}</h2>
+                      <Badge status={exam.status} />
+                    </div>
+                    <p className="text-xs text-stone-500 mt-1">
+                      {exam.class} · {exam.term} {exam.academic_year} · Teacher: <span className="font-medium text-stone-700">{exam.teacher_name}</span>
+                    </p>
+                  </div>
+
+                  {/* Workflow Action Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {user?.role === "teacher" && ["draft", "admin_returned"].includes(exam.status) && (
+                      <Btn kind="success" onClick={() => act("/submit")}>Submit for Review</Btn>
+                    )}
+                    {user?.role === "administrator" && exam.status === "submitted" && (
+                      <>
+                        <Btn kind="success" onClick={() => act("/admin-approve")}>Approve & Send to Headmaster</Btn>
+                        <Btn kind="danger" onClick={() => openReasonModal("admin_return")}>Return to Teacher</Btn>
+                      </>
+                    )}
+                    {user?.role === "headmaster" && exam.status === "admin_approved" && (
+                      <>
+                        <Btn kind="success" onClick={() => act("/hm-publish")}>Publish Results</Btn>
+                        <Btn kind="danger" onClick={() => openReasonModal("hm_return")}>Return to Admin</Btn>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tabs Header */}
+                <div className="flex border-b border-stone-200 text-xs font-semibold gap-6 mb-4">
+                  <button onClick={() => setTab("marks")} className={`pb-2 border-b-2 ${tab === "marks" ? "border-violet-900 text-violet-900" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Marks Entry</button>
+                  <button onClick={() => setTab("students")} className={`pb-2 border-b-2 ${tab === "students" ? "border-violet-900 text-violet-900" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Class Roster</button>
+                  <button onClick={() => setTab("audit")} className={`pb-2 border-b-2 ${tab === "audit" ? "border-violet-900 text-violet-900" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Audit Log</button>
+                </div>
+
+                {/* Tab 1: Marks Entry */}
+                {tab === "marks" && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-xs text-stone-500">
+                        Enter class scores (max 50) and examination scores (max 50).
+                      </div>
+                      {!marksEdit ? (
+                        <div className="flex gap-2">
+                          {user?.role === "teacher" && ["draft", "admin_returned"].includes(exam.status) && (
+                            <Btn kind="primary" onClick={startMarksEdit}>Edit Marks</Btn>
+                          )}
+                          {user?.role === "teacher" && exam.status === "published" && !pendingCorrection && (
+                            <Btn kind="secondary" onClick={startCorrection}>Request Correction</Btn>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Btn kind="secondary" onClick={() => { setMarksEdit(null); setCorrectionMode(false); }}>Cancel</Btn>
+                          <Btn kind="primary" onClick={saveMarks} disabled={hasInvalidScore}>Save Changes</Btn>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Marks Entry Table */}
+                    <div className="border border-stone-200 rounded-lg overflow-hidden mb-4">
+                      <table className="w-full text-sm">
+                        <thead className="bg-stone-100 text-stone-600 text-xs uppercase">
+                          <tr>
+                            <th className="text-left px-3 py-2">Student</th>
+                            <th className="text-left px-3 py-2">Class Score (50)</th>
+                            <th className="text-left px-3 py-2">Exam Score (50)</th>
+                            <th className="text-left px-3 py-2">Total Score (100)</th>
+                            <th className="text-left px-3 py-2">Position</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {computedMarkRows.map((row, i) => {
+                            const isClassErr = marksEdit && Number(row.class_score) > 50;
+                            const isExamErr = marksEdit && Number(row.exam_score) > 50;
+
+                            return (
+                              <tr key={row.student_id} className="border-t border-stone-100">
+                                <td className="px-3 py-2 font-medium">{row.name}</td>
+                                <td className="px-3 py-2">
+                                  {marksEdit ? (
+                                    <input
+                                      type="number"
+                                      max="50"
+                                      min="0"
+                                      value={row.class_score}
+                                      onChange={(e) => handleScoreChange(i, "class_score", e.target.value)}
+                                      className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
+                                        isClassErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
+                                      }`}
+                                    />
+                                  ) : (
+                                    row.class_score ?? "—"
+                                  )}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {marksEdit ? (
+                                    <input
+                                      type="number"
+                                      max="50"
+                                      min="0"
+                                      value={row.exam_score}
+                                      onChange={(e) => handleScoreChange(i, "exam_score", e.target.value)}
+                                      className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
+                                        isExamErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
+                                      }`}
+                                    />
+                                  ) : (
+                                    row.exam_score ?? "—"
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 font-semibold text-violet-950">{row.totalScore}</td>
+                                <td className="px-3 py-2 font-medium text-stone-700">{row.position}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Bulk Marks Upload */}
+                    {user?.role === "teacher" && ["draft", "admin_returned"].includes(exam.status) && (
+                      <div className="bg-stone-50 border border-stone-200 rounded-lg p-3">
+                        <div className="text-xs font-semibold text-stone-700 mb-1">Bulk Upload Marks (CSV/Excel)</div>
+                        <div className="text-violet-700 text-xs mt-0.5 mb-2">
+                          Upload a file with columns: <strong>Admission No</strong>, <strong>Class Score</strong> (Max 50), and <strong>Exam Score</strong> (Max 50).
+                        </div>
+                        <input type="file" accept=".csv,.xlsx" onChange={(e) => uploadMarksFile(e.target)} className="text-xs text-stone-600" />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Tab 2: Students List */}
+                {tab === "students" && (
+                  <div>
+                    <div className="flex gap-2 mb-4">
+                      <input type="text" placeholder="Student Full Name" value={newStudent.fullName} onChange={(e) => setNewStudent({ ...newStudent, fullName: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
+                      <input type="text" placeholder="Admission No" value={newStudent.admissionNo} onChange={(e) => setNewStudent({ ...newStudent, admissionNo: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm w-36" />
+                      <Btn kind="primary" onClick={addStudent}>Add Student</Btn>
+                    </div>
+                    <div className="border border-stone-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-stone-100 text-stone-600 text-xs uppercase">
+                          <tr>
+                            <th className="text-left px-3 py-2">Name</th>
+                            <th className="text-left px-3 py-2">Admission No</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {students.map((s) => (
+                            <tr key={s.id} className="border-t border-stone-100">
+                              <td className="px-3 py-2">{s.full_name}</td>
+                              <td className="px-3 py-2 text-stone-500">{s.admission_no}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 3: Audit Log */}
+                {tab === "audit" && (
+                  <div className="space-y-3">
+                    {auditLog.map((log, i) => (
+                      <div key={i} className="border-l-2 border-violet-800 pl-3 py-1 text-xs">
+                        <div className="font-semibold text-stone-900">{log.action}</div>
+                        <div className="text-stone-500">{log.user_name} · {fmt(log.created_at)}</div>
+                        {log.details && <div className="text-stone-600 mt-1">{JSON.stringify(log.details)}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </main>
+      )}
+
+      {/* Reason Modal */}
+      {modal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5">
+            <h3 className="font-serif text-lg font-semibold mb-2">
+              {modal === "admin_return" && "Return Sheet to Teacher"}
+              {modal === "hm_return" && "Return Sheet to Administrator"}
+              {modal === "file_correction" && "Submit Correction Request"}
+            </h3>
+            <p className="text-xs text-stone-500 mb-3">Please provide a clear reason for this action.</p>
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows="3" className="w-full border border-stone-300 rounded p-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-violet-800" placeholder="Type reason here..."></textarea>
+            <div className="flex justify-end gap-2">
+              <Btn onClick={() => setModal(null)}>Cancel</Btn>
+              <Btn kind="primary" onClick={confirmModal}>Confirm & Submit</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
 </body>
 </html>
