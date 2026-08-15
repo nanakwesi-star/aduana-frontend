@@ -571,31 +571,27 @@ function App() {
     } catch (e) { showToast(e.message, "error"); }
   }
 
-  // Handle Input Changes with strict clamping (0-50 max)
+  // Handle Input Changes without auto-clamping (allowing prompt for correction if > 50)
   function handleScoreChange(index, field, value) {
     if (!marksEdit) return;
-    let val = value;
-    if (val !== "") {
-      let num = Number(val);
-      if (isNaN(num)) return;
-      if (num > 50) num = 50;
-      if (num < 0) num = 0;
-      val = num;
-    }
     const updated = [...marksEdit];
-    updated[index] = { ...updated[index], [field]: val };
+    updated[index] = { ...updated[index], [field]: value };
     setMarksEdit(updated);
   }
 
   async function saveMarks() {
-    // Final check for values exceeding 50
-    const invalid = marksEdit.some((m) => Number(m.class_score) > 50 || Number(m.exam_score) > 50);
+    // Final check for values exceeding 50 or below 0
+    const invalid = marksEdit.some((m) => {
+      const c = Number(m.class_score);
+      const e = Number(m.exam_score);
+      return (m.class_score !== "" && (c < 0 || c > 50)) || (m.exam_score !== "" && (e < 0 || e > 50));
+    });
     if (invalid) {
-      showToast("Scores cannot exceed 50 marks.", "error");
+      showToast("Scores must be between 0 and 50.", "error");
       return;
     }
 
- const marks = marksEdit
+    const marks = marksEdit
       .filter((m) => m.class_score !== "" || m.exam_score !== "")
       .map((m) => {
         const classScore = Number(m.class_score || 0);
@@ -779,7 +775,11 @@ function App() {
   if (user?.role === "student") return <StudentDashboard user={user} token={token} onSignOut={signOut} />;
 
   const computedMarkRows = computeRowsWithPositions();
-  const hasInvalidScore = marksEdit && marksEdit.some((m) => Number(m.class_score) > 50 || Number(m.exam_score) > 50);
+  const hasInvalidScore = marksEdit && marksEdit.some((m) => {
+    const c = Number(m.class_score);
+    const e = Number(m.exam_score);
+    return (m.class_score !== "" && (c < 0 || c > 50)) || (m.exam_score !== "" && (e < 0 || e > 50));
+  });
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col">
@@ -1096,40 +1096,48 @@ function App() {
                         </thead>
                         <tbody>
                           {computedMarkRows.map((row, i) => {
-                            const isClassErr = marksEdit && Number(row.class_score) > 50;
-                            const isExamErr = marksEdit && Number(row.exam_score) > 50;
+                            const cVal = Number(row.class_score);
+                            const eVal = Number(row.exam_score);
+                            const isClassErr = marksEdit && row.class_score !== "" && (cVal < 0 || cVal > 50);
+                            const isExamErr = marksEdit && row.exam_score !== "" && (eVal < 0 || eVal > 50);
 
                             return (
                               <tr key={row.student_id} className="border-t border-stone-100">
                                 <td className="px-3 py-2 font-medium">{row.name}</td>
                                 <td className="px-3 py-2">
                                   {marksEdit ? (
-                                    <input
-                                      type="number"
-                                      max="50"
-                                      min="0"
-                                      value={row.class_score}
-                                      onChange={(e) => handleScoreChange(i, "class_score", e.target.value)}
-                                      className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
-                                        isClassErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
-                                      }`}
-                                    />
+                                    <div>
+                                      <input
+                                        type="number"
+                                        max="50"
+                                        min="0"
+                                        value={row.class_score}
+                                        onChange={(e) => handleScoreChange(i, "class_score", e.target.value)}
+                                        className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
+                                          isClassErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
+                                        }`}
+                                      />
+                                      {isClassErr && <div className="text-[10px] text-rose-600 mt-0.5">Must be 0-50</div>}
+                                    </div>
                                   ) : (
                                     row.class_score ?? "—"
                                   )}
                                 </td>
                                 <td className="px-3 py-2">
                                   {marksEdit ? (
-                                    <input
-                                      type="number"
-                                      max="50"
-                                      min="0"
-                                      value={row.exam_score}
-                                      onChange={(e) => handleScoreChange(i, "exam_score", e.target.value)}
-                                      className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
-                                        isExamErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
-                                      }`}
-                                    />
+                                    <div>
+                                      <input
+                                        type="number"
+                                        max="50"
+                                        min="0"
+                                        value={row.exam_score}
+                                        onChange={(e) => handleScoreChange(i, "exam_score", e.target.value)}
+                                        className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
+                                          isExamErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
+                                        }`}
+                                      />
+                                      {isExamErr && <div className="text-[10px] text-rose-600 mt-0.5">Must be 0-50</div>}
+                                    </div>
                                   ) : (
                                     row.exam_score ?? "—"
                                   )}
