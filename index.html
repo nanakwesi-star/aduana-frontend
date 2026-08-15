@@ -1108,11 +1108,13 @@ function App() {
                                   {marksEdit ? (
                                     <div>
                                       <input
-                                        type="number"
-                                        max="50"
-                                        min="0"
+                                        type="text"
+                                        inputmode="numeric"
                                         value={row.class_score}
-                                        onChange={(e) => handleScoreChange(i, "class_score", e.target.value)}
+                                        onChange={(e) => {
+                                          const val = e.target.value.replace(/\D/g, '');
+                                          handleScoreChange(i, "class_score", val === "" ? "" : Number(val));
+                                        }}
                                         className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
                                           isClassErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
                                         }`}
@@ -1127,11 +1129,13 @@ function App() {
                                   {marksEdit ? (
                                     <div>
                                       <input
-                                        type="number"
-                                        max="50"
-                                        min="0"
+                                        type="text"
+                                        inputmode="numeric"
                                         value={row.exam_score}
-                                        onChange={(e) => handleScoreChange(i, "exam_score", e.target.value)}
+                                        onChange={(e) => {
+                                          const val = e.target.value.replace(/\D/g, '');
+                                          handleScoreChange(i, "exam_score", val === "" ? "" : Number(val));
+                                        }}
                                         className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
                                           isExamErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
                                         }`}
