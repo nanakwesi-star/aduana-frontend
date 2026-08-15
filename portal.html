@@ -54,6 +54,13 @@ function fmt(ts) {
   return new Date(ts).toLocaleString(undefined, { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+function getOrdinalSuffix(n) {
+  if (!n || isNaN(n)) return "—";
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 async function api(path, token, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -321,7 +328,7 @@ function App() {
   const [correctionMode, setCorrectionMode] = useState(false);
   const [modal, setModal] = useState(null);
   const [reason, setReason] = useState("");
-  const [view, setView] = useState("exams"); // "exams" | "admin"
+  const [view, setView] = useState("exams");
   const [staffList, setStaffList] = useState([]);
   const [classList, setClassList] = useState([]);
   const [newStaff, setNewStaff] = useState({ name: "", email: "", password: "", role: "teacher" });
@@ -564,7 +571,30 @@ function App() {
     } catch (e) { showToast(e.message, "error"); }
   }
 
+  // Handle Input Changes with strict clamping (0-50 max)
+  function handleScoreChange(index, field, value) {
+    if (!marksEdit) return;
+    let val = value;
+    if (val !== "") {
+      let num = Number(val);
+      if (isNaN(num)) return;
+      if (num > 50) num = 50;
+      if (num < 0) num = 0;
+      val = num;
+    }
+    const updated = [...marksEdit];
+    updated[index] = { ...updated[index], [field]: val };
+    setMarksEdit(updated);
+  }
+
   async function saveMarks() {
+    // Final check for values exceeding 50
+    const invalid = marksEdit.some((m) => Number(m.class_score) > 50 || Number(m.exam_score) > 50);
+    if (invalid) {
+      showToast("Scores cannot exceed 50 marks.", "error");
+      return;
+    }
+
     const marks = marksEdit
       .filter((m) => m.class_score !== "" || m.exam_score !== "")
       .map((m) => ({
@@ -680,6 +710,32 @@ function App() {
     setModal(null);
   }
 
+  // Calculate Positions based on Total Score
+  const computeRowsWithPositions = () => {
+    if (!exam) return [];
+    const sourceRows = marksEdit || exam.marks.map((m) => ({
+      student_id: m.student_id,
+      name: m.full_name,
+      class_score: m.class_score,
+      exam_score: m.exam_score,
+      score: m.score
+    }));
+
+    const computed = sourceRows.map((r) => {
+      const c = Number(r.class_score) || 0;
+      const e = Number(r.exam_score) || 0;
+      const total = r.score !== undefined && r.score !== null ? Number(r.score) : (c + e);
+      return { ...r, totalScore: total };
+    });
+
+    // Rank calculation (Dense Ranking)
+    const sortedScores = Array.from(new Set(computed.map((r) => r.totalScore))).sort((a, b) => b - a);
+    return computed.map((r) => {
+      const rank = sortedScores.indexOf(r.totalScore) + 1;
+      return { ...r, position: getOrdinalSuffix(rank) };
+    });
+  };
+
   if (!token) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
@@ -713,6 +769,9 @@ function App() {
 
   if (user?.role === "parent") return <ParentDashboard user={user} token={token} onSignOut={signOut} />;
   if (user?.role === "student") return <StudentDashboard user={user} token={token} onSignOut={signOut} />;
+
+  const computedMarkRows = computeRowsWithPositions();
+  const hasInvalidScore = marksEdit && marksEdit.some((m) => Number(m.class_score) > 50 || Number(m.exam_score) > 50);
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col">
@@ -939,7 +998,7 @@ function App() {
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <div className="text-xs text-stone-500">
-                        Enter class scores (out of 50) and examination scores (out of 50).
+                        Enter class scores (max 50) and examination scores (max 50).
                       </div>
                       {!marksEdit ? (
                         <div className="flex gap-2">
@@ -953,7 +1012,7 @@ function App() {
                       ) : (
                         <div className="flex gap-2">
                           <Btn kind="secondary" onClick={() => { setMarksEdit(null); setCorrectionMode(false); }}>Cancel</Btn>
-                          <Btn kind="primary" onClick={saveMarks}>Save Changes</Btn>
+                          <Btn kind="primary" onClick={saveMarks} disabled={hasInvalidScore}>Save Changes</Btn>
                         </div>
                       )}
                     </div>
@@ -967,19 +1026,13 @@ function App() {
                             <th className="text-left px-3 py-2">Class Score (50)</th>
                             <th className="text-left px-3 py-2">Exam Score (50)</th>
                             <th className="text-left px-3 py-2">Total Score (100)</th>
+                            <th className="text-left px-3 py-2">Position</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {(marksEdit || exam.marks.map((m) => ({
-                            student_id: m.student_id,
-                            name: m.full_name,
-                            class_score: m.class_score,
-                            exam_score: m.exam_score,
-                            score: m.score
-                          }))).map((row, i) => {
-                            const classVal = Number(row.class_score) || 0;
-                            const examVal = Number(row.exam_score) || 0;
-                            const totalVal = row.score ?? (classVal + examVal);
+                          {computedMarkRows.map((row, i) => {
+                            const isClassErr = marksEdit && Number(row.class_score) > 50;
+                            const isExamErr = marksEdit && Number(row.exam_score) > 50;
 
                             return (
                               <tr key={row.student_id} className="border-t border-stone-100">
@@ -991,12 +1044,10 @@ function App() {
                                       max="50"
                                       min="0"
                                       value={row.class_score}
-                                      onChange={(e) => {
-                                        const v = [...marksEdit];
-                                        v[i] = { ...v[i], class_score: e.target.value };
-                                        setMarksEdit(v);
-                                      }}
-                                      className="w-20 border border-stone-300 rounded px-2 py-1"
+                                      onChange={(e) => handleScoreChange(i, "class_score", e.target.value)}
+                                      className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
+                                        isClassErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
+                                      }`}
                                     />
                                   ) : (
                                     row.class_score ?? "—"
@@ -1009,18 +1060,17 @@ function App() {
                                       max="50"
                                       min="0"
                                       value={row.exam_score}
-                                      onChange={(e) => {
-                                        const v = [...marksEdit];
-                                        v[i] = { ...v[i], exam_score: e.target.value };
-                                        setMarksEdit(v);
-                                      }}
-                                      className="w-20 border border-stone-300 rounded px-2 py-1"
+                                      onChange={(e) => handleScoreChange(i, "exam_score", e.target.value)}
+                                      className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
+                                        isExamErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
+                                      }`}
                                     />
                                   ) : (
                                     row.exam_score ?? "—"
                                   )}
                                 </td>
-                                <td className="px-3 py-2 font-semibold text-violet-950">{totalVal}</td>
+                                <td className="px-3 py-2 font-semibold text-violet-950">{row.totalScore}</td>
+                                <td className="px-3 py-2 font-medium text-stone-700">{row.position}</td>
                               </tr>
                             );
                           })}
