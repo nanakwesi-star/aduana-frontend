@@ -699,72 +699,58 @@ function App() {
     if (modal === "file_correction") {
       const marks = marksEdit
         .filter((m) => m.class_score !== "" || m.exam_score !== "")
-        .map((m) => ({
-          student_id: m.student_id,
-          class_score: Number(m.class_score || 0),
-          exam_score: Number(m.exam_score || 0)
-        }));
+        .map((m) => {
+          const classScore = Number(m.class_score || 0);
+          const examScore = Number(m.exam_score || 0);
+          const total = classScore + examScore;
+          return {
+            student_id: m.student_id,
+            class_score: classScore,
+            exam_score: examScore,
+            score: total,
+            total: total,
+            total_score: total
+          };
+        });
       try {
-        await api(`/api/exams/${exam.id}/corrections`, token, { method: "POST", body: JSON.stringify({ reason, proposedMarks: marks }) });
-        showToast("Correction request filed.", "success");
-        setMarksEdit(null); setCorrectionMode(false);
+        await api(`/api/exams/${exam.id}/correction-request`, token, {
+          method: "POST",
+          body: JSON.stringify({ marks, reason })
+        });
+        showToast("Correction request submitted for review.", "success");
+        setCorrectionMode(false);
+        setMarksEdit(null);
         await loadExamDetail(exam.id);
-      } catch (e) { showToast(e.message, "error"); }
+      } catch (e) {
+        showToast(e.message, "error");
+      }
     }
     setModal(null);
+    setReason("");
   }
-
-  // Calculate Positions based on Total Score
-  const computeRowsWithPositions = () => {
-    if (!exam) return [];
-    const sourceRows = marksEdit || exam.marks.map((m) => ({
-      student_id: m.student_id,
-      name: m.full_name,
-      class_score: m.class_score,
-      exam_score: m.exam_score,
-      score: m.score
-    }));
-
-    const computed = sourceRows.map((r) => {
-      const c = Number(r.class_score) || 0;
-      const e = Number(r.exam_score) || 0;
-      const total = r.score !== undefined && r.score !== null ? Number(r.score) : (c + e);
-      return { ...r, totalScore: total };
-    });
-
-    // Rank calculation (Dense Ranking)
-    const sortedScores = Array.from(new Set(computed.map((r) => r.totalScore))).sort((a, b) => b - a);
-    return computed.map((r) => {
-      const rank = sortedScores.indexOf(r.totalScore) + 1;
-      return { ...r, position: getOrdinalSuffix(rank) };
-    });
-  };
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
-        <div className="max-w-sm w-full">
-          <div className="flex items-center gap-2 mb-6 justify-center">
-            <span className="text-2xl">🏅</span>
-            <span className="font-serif text-xl text-violet-950">Aduana Model JHS</span>
+      <div className="min-h-screen bg-stone-900 text-stone-100 flex items-center justify-center p-4">
+        <div className="bg-stone-800 border border-stone-700 rounded-2xl p-8 w-full max-w-md shadow-2xl">
+          <div className="text-center mb-6">
+            <span className="text-3xl">🏅</span>
+            <h1 className="font-serif text-2xl font-bold mt-2">Aduana Model JHS</h1>
+            <p className="text-xs text-stone-400 mt-1">Results Workflow & Assessment Portal</p>
           </div>
-          <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm">
-            <h1 className="font-serif text-lg text-stone-900 mb-1">Sign in to Results Portal</h1>
-            <p className="text-xs text-stone-500 mb-4">Enter your school account details below.</p>
-            {loginError && <div className="bg-rose-50 text-rose-800 border border-rose-200 text-xs p-2.5 rounded-lg mb-3">{loginError}</div>}
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-stone-700 mb-1">Email Address</label>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. teacher@aduana.edu" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-800" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-stone-700 mb-1">Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-800" />
-              </div>
-              <button onClick={signIn} disabled={loggingIn} className="w-full bg-violet-900 text-white font-medium py-2 rounded-lg text-sm hover:bg-violet-950 transition disabled:opacity-50">
-                {loggingIn ? "Signing in…" : "Sign In"}
-              </button>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Email Address</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="name@aduanamodel.edu.gh" className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold" />
             </div>
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Password</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="••••••••" className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold" />
+            </div>
+            {loginError && <div className="text-rose-400 text-xs bg-rose-950/50 border border-rose-900 p-2.5 rounded-lg">{loginError}</div>}
+            <button onClick={signIn} disabled={loggingIn} className="w-full bg-gold hover:bg-gold-light text-violet-950 font-semibold py-2.5 rounded-lg transition text-sm disabled:opacity-50">
+              {loggingIn ? "Signing in…" : "Sign In"}
+            </button>
           </div>
         </div>
       </div>
@@ -774,461 +760,519 @@ function App() {
   if (user?.role === "parent") return <ParentDashboard user={user} token={token} onSignOut={signOut} />;
   if (user?.role === "student") return <StudentDashboard user={user} token={token} onSignOut={signOut} />;
 
-  const computedMarkRows = computeRowsWithPositions();
-  const hasInvalidScore = marksEdit && marksEdit.some((m) => {
-    const c = Number(m.class_score);
-    const e = Number(m.exam_score);
-    return (m.class_score !== "" && (c < 0 || c > 100)) || (m.exam_score !== "" && (e < 0 || e > 100));
-  });
-
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col">
-      {/* Header */}
-      <header className="bg-violet-950 text-violet-50 border-b border-violet-900 px-4 py-3 flex items-center justify-between">
+      <div className="bg-violet-950 text-violet-50 px-4 py-3 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">🏅</span>
+          <span className="text-xl">🏅</span>
           <div>
-            <h1 className="font-serif text-lg leading-tight">Aduana Model JHS</h1>
-            <p className="text-[11px] text-violet-300">Results Workflow Portal</p>
+            <div className="font-serif text-lg leading-tight">Aduana Model JHS</div>
+            <div className="text-[11px] text-violet-300 -mt-0.5">Results Workflow & Assessment Portal</div>
           </div>
         </div>
         <div className="flex items-center gap-4 text-sm">
-          {["administrator", "super_administrator"].includes(user?.role) && (
-            <div className="flex bg-violet-900 rounded-lg p-0.5 text-xs">
-              <button onClick={() => setView("exams")} className={`px-2.5 py-1 rounded-md font-medium ${view === "exams" ? "bg-gold text-violet-950" : "text-violet-200"}`}>Exams Workflow</button>
-              <button onClick={() => setView("admin")} className={`px-2.5 py-1 rounded-md font-medium ${view === "admin" ? "bg-gold text-violet-950" : "text-violet-200"}`}>Admin Setup</button>
+          <div className="text-right hidden sm:block">
+            <div className="font-medium text-violet-100">{user.name}</div>
+            <div className="text-[11px] text-violet-300 uppercase tracking-wider">{user.role.replace("_", " ")}</div>
+          </div>
+          {["administrator", "super_administrator"].includes(user.role) && (
+            <div className="flex bg-violet-900/80 rounded-lg p-0.5 border border-violet-800">
+              <button onClick={() => setView("exams")} className={`px-3 py-1 rounded-md text-xs font-medium transition ${view === "exams" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Exams</button>
+              <button onClick={() => setView("admin")} className={`px-3 py-1 rounded-md text-xs font-medium transition ${view === "admin" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Admin Panel</button>
             </div>
           )}
-          <span className="text-violet-200 text-xs hidden sm:inline">{user?.name} ({user?.role})</span>
-          <button onClick={() => setShowChangePw(true)} className="text-xs text-violet-300 hover:text-white">Change Password</button>
-          <button onClick={signOut} className="text-xs text-violet-300 hover:text-white font-medium">Sign Out</button>
+          <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white text-xs">Password</button>
+          <button onClick={signOut} className="text-violet-300 hover:text-white text-xs">Sign out</button>
         </div>
-      </header>
+      </div>
 
       {showChangePw && <ChangePasswordModal token={token} onClose={() => setShowChangePw(false)} showToastFn={showToast} />}
       {toast && <div className={`fixed bottom-4 right-4 px-4 py-2.5 rounded-lg shadow-lg text-sm text-white z-50 ${toast.kind === "error" ? "bg-rose-700" : toast.kind === "success" ? "bg-emerald-700" : "bg-stone-800"}`}>{toast.msg}</div>}
 
-      {/* Main Body */}
-      {view === "admin" ? (
-        <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6 space-y-6">
-          <h2 className="font-serif text-2xl font-bold">Admin Portal Setup</h2>
-          
+      {/* ADMIN PANEL VIEW */}
+      {view === "admin" && ["administrator", "super_administrator"].includes(user.role) ? (
+        <div className="max-w-6xl mx-auto p-4 md:p-6 w-full space-y-6">
+          <h1 className="font-serif text-2xl">Administration Panel</h1>
+
           {/* Term Settings */}
           <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
-            <h3 className="font-serif text-lg font-semibold mb-2">Current Active Term</h3>
-            <div className="flex flex-wrap gap-3 items-center">
-              <input type="text" value={termForm.term} onChange={(e) => setTermForm({ ...termForm, term: e.target.value })} placeholder="Term e.g. Term 1" className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
-              <input type="number" value={termForm.academicYear} onChange={(e) => setTermForm({ ...termForm, academicYear: e.target.value })} placeholder="Academic Year e.g. 2026" className="border border-stone-300 rounded px-3 py-1.5 text-sm w-32" />
-              <Btn kind="primary" onClick={updateTermSettings}>Update Active Term</Btn>
+            <h2 className="font-serif text-lg mb-3">Current Academic Term Settings</h2>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs text-stone-500 mb-1">Term</label>
+                <select value={termForm.term} onChange={(e) => setTermForm({ ...termForm, term: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                  <option value="Term 1">Term 1</option>
+                  <option value="Term 2">Term 2</option>
+                  <option value="Term 3">Term 3</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-stone-500 mb-1">Academic Year</label>
+                <input type="number" value={termForm.academicYear} onChange={(e) => setTermForm({ ...termForm, academicYear: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm w-32" />
+              </div>
+              <Btn kind="primary" onClick={updateTermSettings}>Update Term</Btn>
             </div>
           </div>
 
-          {/* Classes & Assignments */}
-          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
-            <h3 className="font-serif text-lg font-semibold mb-3">Manage Classes & Subject Teachers</h3>
-            <div className="flex gap-2 mb-4">
-              <input type="text" value={newClass.name} onChange={(e) => setNewClass({ ...newClass, name: e.target.value })} placeholder="Class Name (e.g. JHS 1)" className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
-              <Btn kind="primary" onClick={createClass}>Add Class</Btn>
+          {/* Staff Management */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Create Staff Account</h2>
+              <div className="space-y-3">
+                <input type="text" placeholder="Full Name" value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="email" placeholder="Email Address" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="password" placeholder="Password (min 8 chars)" value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <div>
+                  <label className="block text-xs text-stone-500 mb-1">Role</label>
+                  <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="teacher">Teacher</option>
+                    <option value="administrator">Administrator</option>
+                    <option value="headmaster">Headmaster</option>
+                  </select>
+                </div>
+                <Btn kind="primary" onClick={createStaff}>Create Staff</Btn>
+              </div>
             </div>
-            <div className="space-y-4">
-              {classList.map((c) => (
-                <div key={c.id} className="border border-stone-200 rounded-lg p-4 bg-stone-50">
-                  <div className="font-medium text-stone-900 mb-2">{c.name} (Year: {c.academic_year})</div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm flex flex-col">
+              <h2 className="font-serif text-lg mb-3">Staff Directory</h2>
+              <div className="overflow-y-auto max-h-72 space-y-2 flex-1">
+                {staffList.map((s) => (
+                  <div key={s.id} className="border border-stone-100 rounded-lg p-3 flex items-center justify-between bg-stone-50/50">
                     <div>
-                      <span className="text-xs font-semibold uppercase text-stone-500 block mb-1">Form Master</span>
-                      <select value={c.form_master_id || ""} onChange={(e) => setFormMaster(c.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 text-sm w-full bg-white">
-                        <option value="">Select Form Master...</option>
-                        {staffList.filter(s => s.role === "teacher").map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      <div className="font-medium text-sm">{s.name} {!s.is_active && <span className="text-xs text-rose-600">(Deactivated)</span>}</div>
+                      <div className="text-xs text-stone-500">{s.email} · <span className="uppercase">{s.role}</span></div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {resetPwFor === s.id ? (
+                        <div className="flex items-center gap-1">
+                          <input type="password" placeholder="New password" value={resetPwValue} onChange={(e) => setResetPwValue(e.target.value)} className="border rounded px-2 py-1 text-xs w-28" />
+                          <Btn kind="primary" onClick={() => resetAccountPassword(s.id)}>Save</Btn>
+                          <Btn onClick={() => { setResetPwFor(null); setResetPwValue(""); }}>Cancel</Btn>
+                        </div>
+                      ) : (
+                        <>
+                          <button onClick={() => setResetPwFor(s.id)} className="text-xs text-violet-700 hover:underline mr-2">Reset Pw</button>
+                          {s.is_active && <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-700 hover:underline">Deactivate</button>}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Class & Subject Management */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Create Class</h2>
+              <div className="space-y-3">
+                <input type="text" placeholder="Class Name (e.g. JHS 1A)" value={newClass.name} onChange={(e) => setNewClass({ ...newClass, name: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="number" placeholder="Academic Year" value={newClass.academicYear} onChange={(e) => setNewClass({ ...newClass, academicYear: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <Btn kind="primary" onClick={createClass}>Create Class</Btn>
+              </div>
+            </div>
+
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Class Management & Assignments</h2>
+              <div className="overflow-y-auto max-h-72 space-y-4">
+                {classList.map((c) => (
+                  <div key={c.id} className="border border-stone-200 rounded-lg p-3">
+                    <div className="font-medium text-sm mb-1">{c.name} ({c.academic_year})</div>
+                    <div className="text-xs text-stone-500 mb-2">Form Master: {staffList.find((s) => s.id === c.form_master_id)?.name || "None assigned"}</div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <select onChange={(e) => setFormMaster(c.id, e.target.value)} defaultValue="" className="border rounded px-2 py-1 text-xs bg-white">
+                        <option value="" disabled>Set form master…</option>
+                        {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                     </div>
-                    <div>
-                      <span className="text-xs font-semibold uppercase text-stone-500 block mb-1">Assign Subject Teacher</span>
-                      <div className="flex gap-1">
-                        <input type="text" placeholder="Subject Name" value={assignSubject[c.id]?.subject || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], subject: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-sm w-1/2 bg-white" />
-                        <select value={assignSubject[c.id]?.teacherId || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], teacherId: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-sm w-1/2 bg-white">
-                          <option value="">Select Teacher...</option>
-                          {staffList.filter(s => s.role === "teacher").map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                        <Btn kind="primary" onClick={() => assignSubjectTeacher(c.id)}>+</Btn>
-                      </div>
-                    </div>
-                  </div>
-                  {c.subjects && c.subjects.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {c.subjects.map(s => (
-                        <span key={s.subject} className="bg-white border border-stone-300 px-2 py-1 rounded text-xs flex items-center gap-1">
-                          <strong>{s.subject}:</strong> {s.teacher_name}
-                          <button onClick={() => removeSubjectAssignment(c.id, s.subject)} className="text-rose-600 hover:text-rose-800 font-bold ml-1">×</button>
-                        </span>
+                    <div className="text-xs font-medium text-stone-700 mb-1">Subject Teachers:</div>
+                    <div className="space-y-1 mb-2">
+                      {c.subjects?.map((sub, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs bg-stone-50 px-2 py-1 rounded">
+                          <span>{sub.subject}: {staffList.find((s) => s.id === sub.teacher_id)?.name || "Unknown"}</span>
+                          <button onClick={() => removeSubjectAssignment(c.id, sub.subject)} className="text-rose-600 hover:underline">Remove</button>
+                        </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Staff Accounts */}
-          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
-            <h3 className="font-serif text-lg font-semibold mb-3">Manage Staff Accounts</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
-              <input type="text" placeholder="Full Name" value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
-              <input type="email" placeholder="Email Address" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
-              <input type="password" placeholder="Password" value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
-              <div className="flex gap-2">
-                <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="border border-stone-300 rounded px-2 py-1.5 text-sm flex-1">
-                  <option value="teacher">Teacher</option>
-                  <option value="administrator">Administrator</option>
-                  <option value="headmaster">Headmaster</option>
-                </select>
-                <Btn kind="primary" onClick={createStaff}>Create</Btn>
-              </div>
-            </div>
-            <div className="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden text-sm">
-              {staffList.map(s => (
-                <div key={s.id} className="p-3 flex items-center justify-between bg-white">
-                  <div>
-                    <span className="font-medium text-stone-900">{s.name}</span>
-                    <span className="text-stone-500 text-xs ml-2">({s.email})</span>
-                    <span className="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-stone-100 text-stone-700 uppercase">{s.role}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {resetPwFor === s.id ? (
-                      <div className="flex gap-1 items-center">
-                        <input type="password" placeholder="New pass" value={resetPwValue} onChange={(e) => setResetPwValue(e.target.value)} className="border border-stone-300 rounded px-2 py-1 text-xs w-28" />
-                        <Btn kind="primary" onClick={() => resetAccountPassword(s.id)}>Save</Btn>
-                        <button onClick={() => setResetPwFor(null)} className="text-xs text-stone-500">Cancel</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setResetPwFor(s.id)} className="text-xs text-violet-700 hover:underline">Reset Pass</button>
-                    )}
-                    {s.is_active ? (
-                      <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-600 hover:underline">Deactivate</button>
-                    ) : (
-                      <span className="text-xs text-stone-400">Inactive</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Parent Accounts */}
-          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
-            <h3 className="font-serif text-lg font-semibold mb-3">Manage Parent Accounts</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
-              <input type="text" placeholder="Parent Full Name" value={newParent.name} onChange={(e) => setNewParent({ ...newParent, name: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
-              <input type="email" placeholder="Email Address" value={newParent.email} onChange={(e) => setNewParent({ ...newParent, email: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
-              <input type="password" placeholder="Password" value={newParent.password} onChange={(e) => setNewParent({ ...newParent, password: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
-              <div className="flex gap-2">
-                <input type="text" placeholder="Admission Nos (comma-sep)" value={newParent.admissionNos} onChange={(e) => setNewParent({ ...newParent, admissionNos: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm flex-1" />
-                <Btn kind="primary" onClick={createParent}>Create</Btn>
-              </div>
-            </div>
-            <div className="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden text-sm">
-              {parentsList.map(p => (
-                <div key={p.id} className="p-3 flex items-center justify-between bg-white">
-                  <div>
-                    <span className="font-medium text-stone-900">{p.name}</span>
-                    <span className="text-stone-500 text-xs ml-2">({p.email})</span>
-                  </div>
-                  <div className="text-xs text-stone-500">
-                    Linked Children: {p.children && p.children.length > 0 ? p.children.map(c => `${c.full_name} (${c.admission_no})`).join(", ") : "None"}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Student Portal Accounts */}
-          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
-            <h3 className="font-serif text-lg font-semibold mb-3">Student Portal Credentials</h3>
-            <div className="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden text-sm max-h-96 overflow-y-auto">
-              {allStudents.map(st => (
-                <div key={st.id} className="p-3 flex items-center justify-between bg-white">
-                  <div>
-                    <span className="font-medium text-stone-900">{st.full_name}</span>
-                    <span className="text-stone-500 text-xs ml-2">({st.class} · Adm: {st.admission_no})</span>
-                    {st.email && <span className="ml-2 text-xs text-emerald-700 font-medium">Account Issued ({st.email})</span>}
-                  </div>
-                  <div>
-                    {showCredentialFor === st.id ? (
-                      <div className="flex gap-1 items-center">
-                        <input type="email" placeholder="Email" value={credentialForm[st.id]?.email || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [st.id]: { ...credentialForm[st.id], email: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-xs w-32" />
-                        <input type="password" placeholder="Pass" value={credentialForm[st.id]?.password || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [st.id]: { ...credentialForm[st.id], password: e.target.value } })} className="border border-stone-300 rounded px-2 py-1 text-xs w-24" />
-                        <Btn kind="primary" onClick={() => issueCredentials(st.id)}>Save</Btn>
-                        <button onClick={() => setShowCredentialFor(null)} className="text-xs text-stone-500">Cancel</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setShowCredentialFor(st.id)} className="text-xs text-violet-700 hover:underline">
-                        {st.email ? "Reset Account" : "Issue Account"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </main>
-      ) : (
-        <main className="flex-1 flex flex-col md:flex-row max-w-7xl w-full mx-auto p-4 md:p-6 gap-6">
-          {/* Sidebar */}
-          <aside className="w-full md:w-72 flex-shrink-0 space-y-4">
-            {user?.role === "teacher" && (
-              <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
-                <h2 className="font-serif text-sm font-semibold text-stone-900 mb-2">Create New Exam</h2>
-                <select value={selectedAssignment} onChange={(e) => setSelectedAssignment(e.target.value)} className="w-full border border-stone-300 rounded-lg p-2 text-xs mb-2 bg-white">
-                  <option value="">Select Class & Subject...</option>
-                  {myAssignments.map((a, i) => (
-                    <option key={i} value={`${a.class_id}|||${a.subject}`}>{a.class_name} — {a.subject}</option>
-                  ))}
-                </select>
-                <Btn kind="primary" onClick={createExam} disabled={!selectedAssignment}>Start Exam Sheet</Btn>
-              </div>
-            )}
-
-            <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
-              <h2 className="font-serif text-sm font-semibold text-stone-900 mb-3">Exams List</h2>
-              {loading && !exams.length ? (
-                <div className="text-xs text-stone-400">Loading exams…</div>
-              ) : exams.length === 0 ? (
-                <div className="text-xs text-stone-500">No exams created yet.</div>
-              ) : (
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                  {exams.map((e) => (
-                    <div key={e.id} onClick={() => setSelectedId(e.id)}
-                      className={`p-3 rounded-lg border text-xs cursor-pointer transition ${selectedId === e.id ? "border-violet-800 bg-violet-50/50" : "border-stone-200 hover:border-stone-300 bg-white"}`}>
-                      <div className="font-semibold text-stone-900">{e.subject}</div>
-                      <div className="text-stone-500 mt-0.5">{e.class} · {e.term} {e.academic_year}</div>
-                      <div className="mt-2 flex items-center justify-between">
-                        <Badge status={e.status} />
-                      </div>
+                    <div className="flex items-center gap-1">
+                      <input type="text" placeholder="Subject name" value={assignSubject[c.id]?.subject || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], subject: e.target.value } })} className="border rounded px-2 py-1 text-xs flex-1" />
+                      <select value={assignSubject[c.id]?.teacherId || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], teacherId: e.target.value } })} className="border rounded px-2 py-1 text-xs bg-white flex-1">
+                        <option value="" disabled>Select teacher…</option>
+                        {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                      <Btn kind="primary" onClick={() => assignSubjectTeacher(c.id)}>Assign</Btn>
                     </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Parent & Student Portal Credential Management */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Create Parent Account</h2>
+              <div className="space-y-3">
+                <input type="text" placeholder="Parent Full Name" value={newParent.name} onChange={(e) => setNewParent({ ...newParent, name: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="email" placeholder="Parent Email Address" value={newParent.email} onChange={(e) => setNewParent({ ...newParent, email: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="password" placeholder="Password (min 8 chars)" value={newParent.password} onChange={(e) => setNewParent({ ...newParent, password: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="text" placeholder="Linked Admission Nos. (comma-separated, e.g. ADU/2026/001, ADU/2026/002)" value={newParent.admissionNos} onChange={(e) => setNewParent({ ...newParent, admissionNos: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <Btn kind="primary" onClick={createParent}>Create Parent Account</Btn>
+              </div>
+            </div>
+
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm flex flex-col">
+              <h2 className="font-serif text-lg mb-3">Student Portal Logins</h2>
+              <div className="overflow-y-auto max-h-80 space-y-2 flex-1">
+                {allStudents.map((st) => (
+                  <div key={st.id} className="border border-stone-100 rounded-lg p-3 bg-stone-50/50">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="font-medium text-sm">{st.full_name} <span className="text-xs text-stone-500">({st.class} · {st.admission_no})</span></div>
+                      {st.has_login ? (
+                        <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">Login Active</span>
+                      ) : (
+                        <button onClick={() => setShowCredentialFor(showCredentialFor === st.id ? null : st.id)} className="text-xs text-violet-700 hover:underline font-medium">Issue Login</button>
+                      )}
+                    </div>
+                    {showCredentialFor === st.id && (
+                      <div className="mt-2 pt-2 border-t border-stone-200 flex items-center gap-2">
+                        <input type="email" placeholder="Student email" value={credentialForm[st.id]?.email || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [st.id]: { ...credentialForm[st.id], email: e.target.value } })} className="border rounded px-2 py-1 text-xs flex-1" />
+                        <input type="password" placeholder="Password" value={credentialForm[st.id]?.password || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [st.id]: { ...credentialForm[st.id], password: e.target.value } })} className="border rounded px-2 py-1 text-xs flex-1" />
+                        <Btn kind="primary" onClick={() => issueCredentials(st.id)}>Save</Btn>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* EXAMS VIEW */
+        <div className="max-w-6xl mx-auto p-4 md:p-6 w-full flex-1 flex flex-col md:flex-row gap-6">
+          {/* Sidebar */}
+          <div className="w-full md:w-80 flex-shrink-0 space-y-4">
+            <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Exams</h2>
+              {currentTerm && (
+                <div className="text-xs bg-violet-50 text-violet-900 px-3 py-2 rounded-lg mb-3 border border-violet-100">
+                  Current Term: <span className="font-semibold">{currentTerm.term} {currentTerm.academic_year}</span>
+                </div>
+              )}
+
+              {user.role === "teacher" && (
+                <div className="mb-4 pb-4 border-b border-stone-100 space-y-2">
+                  <div className="text-xs font-medium text-stone-700">Create Exam Sheet</div>
+                  <select value={selectedAssignment} onChange={(e) => setSelectedAssignment(e.target.value)} className="w-full border border-stone-300 rounded-lg px-2.5 py-2 text-xs bg-white">
+                    <option value="" disabled>Select assigned class & subject…</option>
+                    {myAssignments.map((a, i) => (
+                      <option key={i} value={`${a.class_id}|||${a.subject}`}>{a.class_name} — {a.subject}</option>
+                    ))}
+                  </select>
+                  <Btn kind="primary" onClick={createExam}>Create Exam Sheet</Btn>
+                </div>
+              )}
+
+              {loading && exams.length === 0 ? (
+                <div className="text-stone-400 text-xs">Loading exams…</div>
+              ) : exams.length === 0 ? (
+                <div className="text-stone-400 text-xs">No exam sheets found.</div>
+              ) : (
+                <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+                  {exams.map((ex) => (
+                    <button key={ex.id} onClick={() => setSelectedId(ex.id)}
+                      className={`w-full text-left p-3 rounded-lg border text-sm transition ${selectedId === ex.id ? "bg-violet-900 text-white border-violet-900 shadow-sm" : "bg-white border-stone-200 hover:border-stone-300 text-stone-800"}`}>
+                      <div className="font-medium truncate">{ex.subject}</div>
+                      <div className={`text-xs flex items-center justify-between mt-1 ${selectedId === ex.id ? "text-violet-200" : "text-stone-500"}`}>
+                        <span>{ex.class}</span>
+                        <span className="scale-90 origin-right"><Badge status={ex.status} /></span>
+                      </div>
+                    </button>
                   ))}
                 </div>
               )}
             </div>
-          </aside>
+          </div>
 
-          {/* Main Detail Area */}
-          <section className="flex-1 bg-white border border-stone-200 rounded-xl p-5 md:p-6 shadow-sm">
+          {/* Main Content Area */}
+          <div className="flex-1 min-w-0">
             {!exam ? (
-              <div className="h-64 flex flex-col items-center justify-center text-stone-400 text-sm">
-                <span>Select an exam sheet from the left sidebar to view details.</span>
+              <div className="bg-white border border-stone-200 rounded-xl p-12 text-center text-stone-400 shadow-sm">
+                Select an exam sheet from the sidebar to view and manage marks.
               </div>
             ) : (
-              <div>
-                {/* Exam Title & Meta Header */}
-                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-stone-200 pb-4 mb-4">
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+                {/* Header */}
+                <div className="p-5 border-b border-stone-200 bg-stone-50/50 flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="font-serif text-2xl font-bold text-stone-900">{exam.subject}</h2>
+                    <div className="flex items-center gap-3">
+                      <h1 className="font-serif text-2xl font-bold">{exam.subject}</h1>
                       <Badge status={exam.status} />
                     </div>
-                    <p className="text-xs text-stone-500 mt-1">
-                      {exam.class} · {exam.term} {exam.academic_year} · Teacher: <span className="font-medium text-stone-700">{exam.teacher_name}</span>
-                    </p>
+                    <div className="text-sm text-stone-500 mt-0.5">
+                      Class: {exam.class} · Term: {exam.term} {exam.academic_year} · Teacher: {exam.teacher_name}
+                    </div>
                   </div>
 
-                  {/* Workflow Action Buttons */}
-                  <div className="flex flex-wrap gap-2">
-                    {user?.role === "teacher" && ["draft", "admin_returned"].includes(exam.status) && (
-                      <Btn kind="success" onClick={() => act("/submit")}>Submit for Review</Btn>
+                  {/* Actions Toolbar */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {user.role === "teacher" && exam.status === "draft" && (
+                      <>
+                        <Btn kind="primary" onClick={startMarksEdit}>
+                          {marksEdit ? "Cancel Editing" : "Edit Marks"}
+                        </Btn>
+                        {marksEdit && <Btn kind="success" onClick={saveMarks}>Save Marks</Btn>}
+                        <Btn kind="success" onClick={() => act("/submit")} disabled={!exam.marks || exam.marks.length === 0}>Submit for Review</Btn>
+                      </>
                     )}
-                    {user?.role === "administrator" && exam.status === "submitted" && (
+
+                    {user.role === "teacher" && ["admin_returned", "hm_returned"].includes(exam.status) && (
+                      <>
+                        <Btn kind="primary" onClick={startMarksEdit}>{marksEdit ? "Cancel Editing" : "Revise Marks"}</Btn>
+                        {marksEdit && <Btn kind="success" onClick={saveMarks}>Save Revisions</Btn>}
+                        <Btn kind="success" onClick={() => act("/resubmit")} disabled={!exam.marks || exam.marks.length === 0}>Resubmit</Btn>
+                      </>
+                    )}
+
+                    {user.role === "administrator" && exam.status === "submitted" && (
                       <>
                         <Btn kind="success" onClick={() => act("/admin-approve")}>Approve & Send to Headmaster</Btn>
                         <Btn kind="danger" onClick={() => openReasonModal("admin_return")}>Return to Teacher</Btn>
                       </>
                     )}
-                    {user?.role === "headmaster" && exam.status === "admin_approved" && (
+
+                    {user.role === "headmaster" && exam.status === "admin_approved" && (
                       <>
-                        <Btn kind="success" onClick={() => act("/hm-publish")}>Publish Results</Btn>
-                        <Btn kind="danger" onClick={() => openReasonModal("hm_return")}>Return to Admin</Btn>
+                        <Btn kind="success" onClick={() => act("/hm-publish")}>Approve & Publish Results</Btn>
+                        <Btn kind="danger" onClick={() => openReasonModal("hm_return")}>Return to Administrator</Btn>
                       </>
                     )}
+
+                    {user.role === "teacher" && ["published", "locked"].includes(exam.status) && !correctionMode && !pendingCorrection && (
+                      <Btn kind="primary" onClick={startCorrection}>Request Correction</Btn>
+                    )}
+                    {user.role === "teacher" && correctionMode && (
+                      <>
+                        <Btn kind="primary" onClick={startMarksEdit}>Cancel Correction Edit</Btn>
+                        <Btn kind="success" onClick={saveMarks}>Submit Correction</Btn>
+                      </>
+                    )}
+
+                    {user.role === "administrator" && exam.status === "correction_pending_admin" && pendingCorrection && (
+                      <>
+                        <Btn kind="success" onClick={() => decideCorrection(true)}>Approve Correction</Btn>
+                        <Btn kind="danger" onClick={() => openReasonModal("reject_correction")}>Reject Correction</Btn>
+                      </>
+                    )}
+
+                    {user.role === "headmaster" && exam.status === "correction_pending_hm" && pendingCorrection && (
+                      <>
+                        <Btn kind="success" onClick={() => decideCorrection(true)}>Approve Correction</Btn>
+                        <Btn kind="danger" onClick={() => openReasonModal("reject_correction")}>Reject Correction</Btn>
+                      </>
+                    )}
+
+                    {user.role === "super_administrator" && exam.status === "locked" && (
+                      <Btn kind="danger" onClick={() => openReasonModal("emergency_unlock")}>Emergency Unlock</Btn>
+                    )}
                   </div>
                 </div>
 
-                {/* Tabs Header */}
-                <div className="flex border-b border-stone-200 text-xs font-semibold gap-6 mb-4">
-                  <button onClick={() => setTab("marks")} className={`pb-2 border-b-2 ${tab === "marks" ? "border-violet-900 text-violet-900" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Marks Entry</button>
-                  <button onClick={() => setTab("students")} className={`pb-2 border-b-2 ${tab === "students" ? "border-violet-900 text-violet-900" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Class Roster</button>
-                  <button onClick={() => setTab("audit")} className={`pb-2 border-b-2 ${tab === "audit" ? "border-violet-900 text-violet-900" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Audit Log</button>
+                {/* Tabs */}
+                <div className="flex border-b border-stone-200 px-5 bg-stone-50 text-sm">
+                  <button onClick={() => setTab("marks")} className={`py-3 px-4 font-medium border-b-2 transition ${tab === "marks" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Marks & Scores</button>
+                  {["administrator", "headmaster", "super_administrator"].includes(user.role) && (
+                    <button onClick={() => setTab("audit")} className={`py-3 px-4 font-medium border-b-2 transition ${tab === "audit" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Audit Trail</button>
+                  )}
+                  <button onClick={() => setTab("versions")} className={`py-3 px-4 font-medium border-b-2 transition ${tab === "versions" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Version History</button>
+                  {exam.status === "published" && (
+                    <button onClick={() => setTab("report_cards")} className={`py-3 px-4 font-medium border-b-2 transition ${tab === "report_cards" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Report Cards</button>
+                  )}
                 </div>
 
-                {/* Tab 1: Marks Entry */}
+                {/* Tab Content: Marks */}
                 {tab === "marks" && (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-xs text-stone-500">
-                        Enter class scores (max 50) and examination scores (max 50).
+                  <div className="p-5 space-y-4">
+                    {/* Return / Correction Reason banner if present */}
+                    {exam.return_reason && (
+                      <div className="bg-rose-50 border border-rose-200 text-rose-900 p-4 rounded-xl text-sm">
+                        <span className="font-semibold">Return Reason:</span> {exam.return_reason}
                       </div>
-                      {!marksEdit ? (
-                        <div className="flex gap-2">
-                          {user?.role === "teacher" && ["draft", "admin_returned"].includes(exam.status) && (
-                            <Btn kind="primary" onClick={startMarksEdit}>Edit Marks</Btn>
-                          )}
-                          {user?.role === "teacher" && exam.status === "published" && !pendingCorrection && (
-                            <Btn kind="secondary" onClick={startCorrection}>Request Correction</Btn>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <Btn kind="secondary" onClick={() => { setMarksEdit(null); setCorrectionMode(false); }}>Cancel</Btn>
-                          <Btn kind="primary" onClick={saveMarks} disabled={hasInvalidScore}>Save Changes</Btn>
-                        </div>
-                      )}
-                    </div>
+                    )}
+                    {pendingCorrection && (
+                      <div className="bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-xl text-sm">
+                        <span className="font-semibold">Pending Correction Request:</span> {pendingCorrection.reason}
+                      </div>
+                    )}
 
-                    {/* Marks Entry Table */}
-                    <div className="border border-stone-200 rounded-lg overflow-hidden mb-4">
-                      <table className="w-full text-sm">
-                        <thead className="bg-stone-100 text-stone-600 text-xs uppercase">
-                          <tr>
-                            <th className="text-left px-3 py-2">Student</th>
-                            <th className="text-left px-3 py-2">Class Score (50)</th>
-                            <th className="text-left px-3 py-2">Exam Score (50)</th>
-                            <th className="text-left px-3 py-2">Total Score (100)</th>
-                            <th className="text-left px-3 py-2">Position</th>
+                    {/* Bulk Upload Section for Teacher (Draft mode) */}
+                    {user.role === "teacher" && exam.status === "draft" && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-stone-200">
+                        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
+                          <div className="font-medium text-sm mb-1">Add Individual Student</div>
+                          <div className="flex gap-2">
+                            <input type="text" placeholder="Full Name" value={newStudent.fullName} onChange={(e) => setNewStudent({ ...newStudent, fullName: e.target.value })} className="border border-stone-300 rounded px-2.5 py-1.5 text-xs flex-1 bg-white" />
+                            <input type="text" placeholder="Admission No." value={newStudent.admissionNo} onChange={(e) => setNewStudent({ ...newStudent, admissionNo: e.target.value })} className="border border-stone-300 rounded px-2.5 py-1.5 text-xs w-32 bg-white" />
+                            <Btn kind="primary" onClick={addStudent}>Add</Btn>
+                          </div>
+                        </div>
+
+                        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
+                          <div className="font-medium text-sm mb-1">Bulk Upload Marks (CSV / Excel)</div>
+                          <input type="file" accept=".csv,.xlsx" onChange={(e) => uploadMarksFile(e.target)} disabled={marksUploading} className="text-xs file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-violet-900 file:text-white hover:file:bg-violet-800" />
+                          {marksUploadResult && <div className="text-xs text-emerald-700 mt-1">{marksUploadResult.updated.length} marks updated successfully.</div>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Marks Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500 bg-stone-50">
+                            <th className="py-3 px-4">Student Name</th>
+                            <th className="py-3 px-4">Admission No.</th>
+                            <th className="py-3 px-4">Class Work (50)</th>
+                            <th className="py-3 px-4">Exam Score (50)</th>
+                            <th className="py-3 px-4">Total Score (100)</th>
+                            <th className="py-3 px-4">Grade</th>
+                            <th className="py-3 px-4">Pos.</th>
                           </tr>
                         </thead>
-                        <tbody>
-                          {computedMarkRows.map((row, i) => {
-                            const cVal = Number(row.class_score);
-                            const eVal = Number(row.exam_score);
-                            const isClassErr = marksEdit && row.class_score !== "" && (cVal < 0 || cVal > 50);
-                            const isExamErr = marksEdit && row.exam_score !== "" && (eVal < 0 || eVal > 50);
-
-                            return (
-                              <tr key={row.student_id} className="border-t border-stone-100">
-                                <td className="px-3 py-2 font-medium">{row.name}</td>
-                                <td className="px-3 py-2">
-                                  {marksEdit ? (
-                                    <div>
-                                      <input
-                                        type="text"
-                                        inputmode="numeric"
-                                        value={row.class_score}
-                                        onChange={(e) => {
-                                          const val = e.target.value.replace(/\D/g, '');
-                                          handleScoreChange(i, "class_score", val === "" ? "" : Number(val));
-                                        }}
-                                        className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
-                                          isClassErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
-                                        }`}
-                                      />
-                                      {isClassErr && <div className="text-[10px] text-rose-600 mt-0.5">Must be 0-50</div>}
-                                    </div>
-                                  ) : (
-                                    row.class_score ?? "—"
-                                  )}
-                                </td>
-                                <td className="px-3 py-2">
-                                  {marksEdit ? (
-                                    <div>
-                                      <input
-                                        type="text"
-                                        inputmode="numeric"
-                                        value={row.exam_score}
-                                        onChange={(e) => {
-                                          const val = e.target.value.replace(/\D/g, '');
-                                          handleScoreChange(i, "exam_score", val === "" ? "" : Number(val));
-                                        }}
-                                        className={`w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
-                                          isExamErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500" : "border-stone-300 focus:ring-violet-800"
-                                        }`}
-                                      />
-                                      {isExamErr && <div className="text-[10px] text-rose-600 mt-0.5">Must be 0-50</div>}
-                                    </div>
-                                  ) : (
-                                    row.exam_score ?? "—"
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 font-semibold text-violet-950">{row.totalScore}</td>
-                                <td className="px-3 py-2 font-medium text-stone-700">{row.position}</td>
+                        <tbody className="divide-y divide-stone-100 text-sm">
+                          {marksEdit ? (
+                            marksEdit.map((m, idx) => {
+                              const c = Number(m.class_score || 0);
+                              const e = Number(m.exam_score || 0);
+                              const tot = (m.class_score !== "" || m.exam_score !== "") ? c + e : "—";
+                              return (
+                                <tr key={m.student_id} className="hover:bg-stone-50/50">
+                                  <td className="py-3 px-4 font-medium">{m.name}</td>
+                                  <td className="py-3 px-4 text-stone-500 text-xs">{students.find(s => s.id === m.student_id)?.admission_no || "—"}</td>
+                                  <td className="py-3 px-4">
+                                    <input type="number" min="0" max="50" value={m.class_score} onChange={(ev) => handleScoreChange(idx, "class_score", ev.target.value)} className="w-20 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <input type="number" min="0" max="50" value={m.exam_score} onChange={(ev) => handleScoreChange(idx, "exam_score", ev.target.value)} className="w-20 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                  </td>
+                                  <td className="py-3 px-4 font-serif font-semibold">{tot}</td>
+                                  <td className="py-3 px-4 text-stone-400">—</td>
+                                  <td className="py-3 px-4 text-stone-400">—</td>
+                                </tr>
+                              );
+                            })
+                          ) : exam.marks && exam.marks.length > 0 ? (
+                            exam.marks.map((m, idx) => (
+                              <tr key={idx} className="hover:bg-stone-50/50">
+                                <td className="py-3 px-4 font-medium">{m.student_name}</td>
+                                <td className="py-3 px-4 text-stone-500 text-xs">{m.admission_no}</td>
+                                <td className="py-3 px-4">{m.class_score ?? "—"}</td>
+                                <td className="py-3 px-4">{m.exam_score ?? "—"}</td>
+                                <td className="py-3 px-4 font-serif font-semibold">{m.score}</td>
+                                <td className="py-3 px-4 font-semibold text-violet-900">{m.grade ?? "—"}</td>
+                                <td className="py-3 px-4">{getOrdinalSuffix(m.position)}</td>
                               </tr>
-                            );
-                          })}
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan="7" className="py-8 text-center text-stone-400">No marks entered yet. Click "Edit Marks" to begin.</td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                )}
 
-                    {/* Bulk Marks Upload */}
-                    {user?.role === "teacher" && ["draft", "admin_returned"].includes(exam.status) && (
-                      <div className="bg-stone-50 border border-stone-200 rounded-lg p-3">
-                        <div className="text-xs font-semibold text-stone-700 mb-1">Bulk Upload Marks (CSV/Excel)</div>
-                        <div className="text-violet-700 text-xs mt-0.5 mb-2">
-                          Upload a file with columns: <strong>Admission No</strong>, <strong>Class Score</strong> (Max 50), and <strong>Exam Score</strong> (Max 50).
-                        </div>
-                        <input type="file" accept=".csv,.xlsx" onChange={(e) => uploadMarksFile(e.target)} className="text-xs text-stone-600" />
+                {/* Tab Content: Audit Trail */}
+                {tab === "audit" && (
+                  <div className="p-5 space-y-3">
+                    <h3 className="font-serif text-lg mb-2">Audit Log</h3>
+                    {auditLog.length === 0 ? (
+                      <div className="text-stone-400 text-sm">No audit entries recorded.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {auditLog.map((log, i) => (
+                          <div key={i} className="border border-stone-200 rounded-lg p-3 text-sm bg-stone-50/50 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-violet-950">{log.action} <span className="text-xs font-normal text-stone-500">by {log.actor_name}</span></div>
+                              {log.details && <div className="text-xs text-stone-600 mt-0.5">{log.details}</div>}
+                            </div>
+                            <div className="text-xs text-stone-400">{fmt(log.created_at)}</div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Tab 2: Students List */}
-                {tab === "students" && (
-                  <div>
-                    <div className="flex gap-2 mb-4">
-                      <input type="text" placeholder="Student Full Name" value={newStudent.fullName} onChange={(e) => setNewStudent({ ...newStudent, fullName: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm" />
-                      <input type="text" placeholder="Admission No" value={newStudent.admissionNo} onChange={(e) => setNewStudent({ ...newStudent, admissionNo: e.target.value })} className="border border-stone-300 rounded px-3 py-1.5 text-sm w-36" />
-                      <Btn kind="primary" onClick={addStudent}>Add Student</Btn>
-                    </div>
-                    <div className="border border-stone-200 rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-stone-100 text-stone-600 text-xs uppercase">
-                          <tr>
-                            <th className="text-left px-3 py-2">Name</th>
-                            <th className="text-left px-3 py-2">Admission No</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {students.map((s) => (
-                            <tr key={s.id} className="border-t border-stone-100">
-                              <td className="px-3 py-2">{s.full_name}</td>
-                              <td className="px-3 py-2 text-stone-500">{s.admission_no}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                {/* Tab Content: Version History */}
+                {tab === "versions" && (
+                  <div className="p-5 space-y-3">
+                    <h3 className="font-serif text-lg mb-2">Version History</h3>
+                    {versions.length === 0 ? (
+                      <div className="text-stone-400 text-sm">No version history available.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {versions.map((v, i) => (
+                          <div key={i} className="border border-stone-200 rounded-lg p-3 text-sm bg-stone-50/50 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium">Version {v.version_no}</div>
+                              <div className="text-xs text-stone-500">Saved by {v.actor_name} · {fmt(v.created_at)}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Tab 3: Audit Log */}
-                {tab === "audit" && (
-                  <div className="space-y-3">
-                    {auditLog.map((log, i) => (
-                      <div key={i} className="border-l-2 border-violet-800 pl-3 py-1 text-xs">
-                        <div className="font-semibold text-stone-900">{log.action}</div>
-                        <div className="text-stone-500">{log.user_name} · {fmt(log.created_at)}</div>
-                        {log.details && <div className="text-stone-600 mt-1">{JSON.stringify(log.details)}</div>}
+                {/* Tab Content: Report Cards */}
+                {tab === "report_cards" && exam.status === "published" && (
+                  <div className="p-5 space-y-3">
+                    <h3 className="font-serif text-lg mb-2">Student Report Cards</h3>
+                    {reportCards.length === 0 ? (
+                      <div className="text-stone-400 text-sm">Generating report cards…</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {reportCards.map((rc, i) => (
+                          <div key={i} className="border border-stone-200 rounded-lg p-4 bg-stone-50/50 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium">{rc.student_name} ({rc.admission_no})</div>
+                              <div className="text-xs text-stone-500">Total Score: {rc.total_score} · Position: {getOrdinalSuffix(rc.position)} · Grade: {rc.grade}</div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
             )}
-          </section>
-        </main>
+          </div>
+        </div>
       )}
 
-      {/* Reason Modal */}
+      {/* REASON MODAL */}
       {modal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5">
-            <h3 className="font-serif text-lg font-semibold mb-2">
-              {modal === "admin_return" && "Return Sheet to Teacher"}
-              {modal === "hm_return" && "Return Sheet to Administrator"}
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h3 className="font-serif text-xl font-bold">
+              {modal === "admin_return" && "Return Exam to Teacher"}
+              {modal === "hm_return" && "Return Exam to Administrator"}
+              {modal === "reject_correction" && "Reject Correction Request"}
+              {modal === "emergency_unlock" && "Emergency Unlock Exam"}
               {modal === "file_correction" && "Submit Correction Request"}
             </h3>
-            <p className="text-xs text-stone-500 mb-3">Please provide a clear reason for this action.</p>
-            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows="3" className="w-full border border-stone-300 rounded p-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-violet-800" placeholder="Type reason here..."></textarea>
-            <div className="flex justify-end gap-2">
-              <Btn onClick={() => setModal(null)}>Cancel</Btn>
-              <Btn kind="primary" onClick={confirmModal}>Confirm & Submit</Btn>
+            <p className="text-xs text-stone-500">
+              {modal === "file_correction" ? "Please provide a reason for this post-approval correction request:" : "Please provide a mandatory reason for this action:"}
+            </p>
+            <textarea rows="3" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Type your detailed reason here…" className="w-full border border-stone-300 rounded-lg p-2.5 text-sm focus:outline-none focus:border-gold" />
+            <div className="flex justify-end gap-2 pt-2">
+              <Btn onClick={() => { setModal(null); setReason(""); }}>Cancel</Btn>
+              <Btn kind={["admin_return", "hm_return", "reject_correction", "emergency_unlock"].includes(modal) ? "danger" : "primary"} onClick={confirmModal}>Confirm</Btn>
             </div>
           </div>
         </div>
@@ -1237,8 +1281,7 @@ function App() {
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 </script>
 </body>
 </html>
