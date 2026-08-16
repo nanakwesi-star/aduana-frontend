@@ -1110,35 +1110,43 @@ function App() {
                     {/* Bulk Upload Section for Teacher (Draft mode) */}
                     {user.role === "teacher" && exam.status === "draft" && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-stone-200">
-                        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
-                          <div className="font-medium text-sm mb-1">Add Individual Student</div>
-                          <div className="flex gap-2">
-                            <input type="text" placeholder="Full Name" value={newStudent.fullName} onChange={(e) => setNewStudent({ ...newStudent, fullName: e.target.value })} className="border border-stone-300 rounded px-2.5 py-1.5 text-xs flex-1 bg-white" />
-                            <input type="text" placeholder="Admission No." value={newStudent.admissionNo} onChange={(e) => setNewStudent({ ...newStudent, admissionNo: e.target.value })} className="border border-stone-300 rounded px-2.5 py-1.5 text-xs w-32 bg-white" />
-                            <Btn kind="primary" onClick={addStudent}>Add</Btn>
+                        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 min-w-0">
+                          <div className="font-medium text-sm mb-3 text-stone-700">Add Individual Student</div>
+                          <div className="flex flex-col gap-2">
+                            <input type="text" placeholder="Full Name" value={newStudent.fullName} onChange={(e) => setNewStudent({ ...newStudent, fullName: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold" />
+                            <div className="flex gap-2">
+                              <input type="text" placeholder="Admission No." value={newStudent.admissionNo} onChange={(e) => setNewStudent({ ...newStudent, admissionNo: e.target.value })} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold" />
+                              <Btn kind="primary" onClick={addStudent}>
+                                <span className="whitespace-nowrap">Add Student</span>
+                              </Btn>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
-                          <div className="font-medium text-sm mb-1">Bulk Upload Marks (CSV / Excel)</div>
-                          <input type="file" accept=".csv,.xlsx" onChange={(e) => uploadMarksFile(e.target)} disabled={marksUploading} className="text-xs file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-violet-900 file:text-white hover:file:bg-violet-800" />
-                          {marksUploadResult && <div className="text-xs text-emerald-700 mt-1">{marksUploadResult.updated.length} marks updated successfully.</div>}
+                        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 min-w-0">
+                          <div className="font-medium text-sm mb-3 text-stone-700">Bulk Upload Marks (CSV / Excel)</div>
+                          <label className="flex flex-col sm:flex-row sm:items-center gap-2 cursor-pointer">
+                            <span className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-violet-900 text-white hover:bg-violet-800 transition whitespace-nowrap w-fit">Choose File</span>
+                            <input type="file" accept=".csv,.xlsx" onChange={(e) => uploadMarksFile(e.target)} disabled={marksUploading} className="hidden" />
+                            <span className="text-xs text-stone-500 truncate">{marksUploading ? "Uploading…" : "CSV or Excel file"}</span>
+                          </label>
+                          {marksUploadResult && <div className="text-xs text-emerald-700 mt-2">{marksUploadResult.updated.length} marks updated successfully.</div>}
                         </div>
                       </div>
                     )}
 
                     {/* Marks Table */}
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
+                      <table className="w-full text-left border-collapse" style={{ minWidth: "780px" }}>
                         <thead>
                           <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500 bg-stone-50">
-                            <th className="py-3 px-4">Student Name</th>
-                            <th className="py-3 px-4">Admission No.</th>
-                            <th className="py-3 px-4">Class Work (50)</th>
-                            <th className="py-3 px-4">Exam Score (50)</th>
-                            <th className="py-3 px-4">Total Score (100)</th>
-                            <th className="py-3 px-4">Grade</th>
-                            <th className="py-3 px-4">Pos.</th>
+                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "180px" }}>Student Name</th>
+                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "130px" }}>Admission No.</th>
+                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Class Work (50)</th>
+                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Exam Score (50)</th>
+                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Total Score (100)</th>
+                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "80px" }}>Grade</th>
+                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "70px" }}>Pos.</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100 text-sm">
@@ -1149,8 +1157,8 @@ function App() {
                               const tot = (m.class_score !== "" || m.exam_score !== "") ? c + e : "—";
                               return (
                                 <tr key={m.student_id} className="hover:bg-stone-50/50">
-                                  <td className="py-3 px-4 font-medium">{m.name}</td>
-                                  <td className="py-3 px-4 text-stone-500 text-xs">{students.find(s => s.id === m.student_id)?.admission_no || "—"}</td>
+                                  <td className="py-3 px-4 font-medium" style={{ minWidth: "180px" }}>{m.name || "—"}</td>
+                                  <td className="py-3 px-4 text-stone-500 text-xs" style={{ minWidth: "130px" }}>{students.find(s => s.id === m.student_id)?.admission_no || "—"}</td>
                                   <td className="py-3 px-4">
                                     <input type="number" min="0" max="50" value={m.class_score} onChange={(ev) => handleScoreChange(idx, "class_score", ev.target.value)} className="w-20 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
                                   </td>
@@ -1166,8 +1174,8 @@ function App() {
                           ) : exam.marks && exam.marks.length > 0 ? (
                             exam.marks.map((m, idx) => (
                               <tr key={idx} className="hover:bg-stone-50/50">
-                                <td className="py-3 px-4 font-medium">{m.student_name}</td>
-                                <td className="py-3 px-4 text-stone-500 text-xs">{m.admission_no}</td>
+                                <td className="py-3 px-4 font-medium" style={{ minWidth: "180px" }}>{m.student_name || "—"}</td>
+                                <td className="py-3 px-4 text-stone-500 text-xs" style={{ minWidth: "130px" }}>{m.admission_no || "—"}</td>
                                 <td className="py-3 px-4">{m.class_score ?? "—"}</td>
                                 <td className="py-3 px-4">{m.exam_score ?? "—"}</td>
                                 <td className="py-3 px-4 font-serif font-semibold">{m.score}</td>
