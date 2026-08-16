@@ -339,6 +339,7 @@ function App() {
   const [pendingStudents, setPendingStudents] = useState([]);
   const [rejectingStudentId, setRejectingStudentId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [adminTab, setAdminTab] = useState("term");
 
   async function updateTermSettings() {
     if (!termForm.term || !termForm.academicYear) return showToast("Enter both term and year.", "error");
@@ -842,7 +843,21 @@ function App() {
         <div className="max-w-6xl mx-auto p-4 md:p-6 w-full space-y-6">
           <h1 className="font-serif text-2xl">Administration Panel</h1>
 
-          {/* Term Settings */}
+          <div className="flex flex-wrap gap-1 border-b border-stone-200">
+            {[
+              { key: "term", label: "Term Settings" },
+              { key: "staff", label: "Staff" },
+              { key: "classes", label: "Classes & Subjects" },
+              { key: "parents", label: "Parents & Student Logins" },
+            ].map((t) => (
+              <button key={t.key} onClick={() => setAdminTab(t.key)}
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${adminTab === t.key ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {adminTab === "term" && (
           <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
             <h2 className="font-serif text-lg mb-3">Current Academic Term Settings</h2>
             <div className="flex flex-wrap items-end gap-3">
@@ -861,8 +876,9 @@ function App() {
               <Btn kind="primary" onClick={updateTermSettings}>Update Term</Btn>
             </div>
           </div>
+          )}
 
-          {/* Staff Management */}
+          {adminTab === "staff" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
               <h2 className="font-serif text-lg mb-3">Create Staff Account</h2>
@@ -910,8 +926,9 @@ function App() {
               </div>
             </div>
           </div>
+          )}
 
-          {/* Class & Subject Management */}
+          {adminTab === "classes" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
               <h2 className="font-serif text-lg mb-3">Create Class</h2>
@@ -957,8 +974,9 @@ function App() {
               </div>
             </div>
           </div>
+          )}
 
-          {/* Parent & Student Portal Credential Management */}
+          {adminTab === "parents" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
               <h2 className="font-serif text-lg mb-3">Create Parent Account</h2>
@@ -996,6 +1014,7 @@ function App() {
               </div>
             </div>
           </div>
+          )}
         </div>
       ) : view === "student_approvals" && ["administrator", "super_administrator", "headmaster"].includes(user.role) ? (
         /* STUDENT APPROVALS VIEW */
