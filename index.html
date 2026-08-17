@@ -590,6 +590,23 @@ function App() {
     } catch (e) { showToast(e.message, "error"); }
   }
 
+  // New assessment model: Class Work = Individual Test + Group Work +
+  // Class Test + Project (each 0-15, raw total out of 60) scaled to 50.
+  // Exam is entered raw out of 100 and scaled to 50. Total is out of 100.
+  // Kept in sync with the same rounding the backend applies.
+  function computeScaledMarks(m) {
+    const it = Number(m.individual_test || 0);
+    const gw = Number(m.group_work || 0);
+    const ct = Number(m.class_test || 0);
+    const pr = Number(m.project || 0);
+    const er = Number(m.exam_raw || 0);
+    const classworkRaw = it + gw + ct + pr;
+    const classScore = Math.round((classworkRaw * 50 / 60) * 100) / 100;
+    const examScore = Math.round((er * 50 / 100) * 100) / 100;
+    const total = Math.round((classScore + examScore) * 100) / 100;
+    return { classworkRaw, classScore, examScore, total };
+  }
+
   function startMarksEdit() {
     const existing = new Map(exam.marks.map((m) => [m.student_id, m]));
     setMarksEdit(students.map((s) => {
@@ -597,8 +614,11 @@ function App() {
       return {
         student_id: s.id,
         name: s.full_name,
-        class_score: record?.class_score ?? "",
-        exam_score: record?.exam_score ?? ""
+        individual_test: record?.individual_test ?? "",
+        group_work: record?.group_work ?? "",
+        class_test: record?.class_test ?? "",
+        project: record?.project ?? "",
+        exam_raw: record?.exam_raw ?? ""
       };
     }));
   }
@@ -624,25 +644,38 @@ function App() {
   }
 
   async function saveMarks() {
-    // Final check for values exceeding 50 or below 0
+    // Individual Test, Group Work, Class Test, Project: 0-15 each. Exam: 0-100.
     const invalid = marksEdit.some((m) => {
-      const c = Number(m.class_score);
-      const e = Number(m.exam_score);
-      return (m.class_score !== "" && (c < 0 || c > 50)) || (m.exam_score !== "" && (e < 0 || e > 50));
+      const componentFields = ["individual_test", "group_work", "class_test", "project"];
+      for (const f of componentFields) {
+        const v = Number(m[f]);
+        if (m[f] !== "" && (v < 0 || v > 15)) return true;
+      }
+      const er = Number(m.exam_raw);
+      if (m.exam_raw !== "" && (er < 0 || er > 100)) return true;
+      return false;
     });
     if (invalid) {
-      showToast("Scores must be between 0 and 50.", "error");
+      showToast("Individual Test, Group Work, Class Test, and Project must each be between 0 and 15. Exam must be between 0 and 100.", "error");
       return;
     }
 
     const marks = marksEdit
-      .filter((m) => m.class_score !== "" || m.exam_score !== "")
+      .filter((m) => ["individual_test", "group_work", "class_test", "project", "exam_raw"].some((f) => m[f] !== ""))
       .map((m) => {
-        const classScore = Number(m.class_score || 0);
-        const examScore = Number(m.exam_score || 0);
-        const total = classScore + examScore;
+        const individualTest = Number(m.individual_test || 0);
+        const groupWork = Number(m.group_work || 0);
+        const classTest = Number(m.class_test || 0);
+        const project = Number(m.project || 0);
+        const examRaw = Number(m.exam_raw || 0);
+        const { classScore, examScore, total } = computeScaledMarks(m);
         return {
           student_id: m.student_id,
+          individual_test: individualTest,
+          group_work: groupWork,
+          class_test: classTest,
+          project: project,
+          exam_raw: examRaw,
           class_score: classScore,
           exam_score: examScore,
           score: total,
@@ -741,13 +774,21 @@ function App() {
     }
     if (modal === "file_correction") {
       const marks = marksEdit
-        .filter((m) => m.class_score !== "" || m.exam_score !== "")
+        .filter((m) => ["individual_test", "group_work", "class_test", "project", "exam_raw"].some((f) => m[f] !== ""))
         .map((m) => {
-          const classScore = Number(m.class_score || 0);
-          const examScore = Number(m.exam_score || 0);
-          const total = classScore + examScore;
+          const individualTest = Number(m.individual_test || 0);
+          const groupWork = Number(m.group_work || 0);
+          const classTest = Number(m.class_test || 0);
+          const project = Number(m.project || 0);
+          const examRaw = Number(m.exam_raw || 0);
+          const { classScore, examScore, total } = computeScaledMarks(m);
           return {
             student_id: m.student_id,
+            individual_test: individualTest,
+            group_work: groupWork,
+            class_test: classTest,
+            project: project,
+            exam_raw: examRaw,
             class_score: classScore,
             exam_score: examScore,
             score: total,
@@ -1253,7 +1294,8 @@ function App() {
                         </div>
 
                         <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 min-w-0">
-                          <div className="font-medium text-sm mb-3 text-stone-700">Bulk Upload Marks (CSV / Excel)</div>
+                          <div className="font-medium text-sm mb-1 text-stone-700">Bulk Upload Marks (CSV / Excel)</div>
+                          <div className="text-xs text-stone-500 mb-3">Columns: Admission No., Individual Test, Group Work, Class Test, Project, Exam.</div>
                           <label className="flex flex-col sm:flex-row sm:items-center gap-2 cursor-pointer">
                             <span className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-violet-900 text-white hover:bg-violet-800 transition whitespace-nowrap w-fit">Choose File</span>
                             <input type="file" accept=".csv,.xlsx" onChange={(e) => uploadMarksFile(e.target)} disabled={marksUploading} className="hidden" />
@@ -1266,37 +1308,56 @@ function App() {
 
                     {/* Marks Table */}
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse" style={{ minWidth: "780px" }}>
+                      <table className="w-full text-left border-collapse" style={{ minWidth: marksEdit ? "980px" : "780px" }}>
                         <thead>
-                          <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500 bg-stone-50">
-                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "180px" }}>Student Name</th>
-                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "130px" }}>Admission No.</th>
-                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Class Work (50)</th>
-                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Exam Score (50)</th>
-                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Total Score (100)</th>
-                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "80px" }}>Grade</th>
-                            <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "70px" }}>Pos.</th>
-                          </tr>
+                          {marksEdit ? (
+                            <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500 bg-stone-50">
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "160px" }}>Student Name</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "110px" }}>Admission No.</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Ind. Test (15)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Group Work (15)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Class Test (15)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Project (15)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Exam (100)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "100px" }}>Total (100)</th>
+                            </tr>
+                          ) : (
+                            <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500 bg-stone-50">
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "180px" }}>Student Name</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "130px" }}>Admission No.</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Class Work (50)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Exam Score (50)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Total Score (100)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "80px" }}>Grade</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "70px" }}>Pos.</th>
+                            </tr>
+                          )}
                         </thead>
                         <tbody className="divide-y divide-stone-100 text-sm">
                           {marksEdit ? (
                             marksEdit.map((m, idx) => {
-                              const c = Number(m.class_score || 0);
-                              const e = Number(m.exam_score || 0);
-                              const tot = (m.class_score !== "" || m.exam_score !== "") ? c + e : "—";
+                              const { total } = computeScaledMarks(m);
+                              const hasAnyInput = ["individual_test", "group_work", "class_test", "project", "exam_raw"].some((f) => m[f] !== "");
                               return (
                                 <tr key={m.student_id} className="hover:bg-stone-50/50">
-                                  <td className="py-3 px-4 font-medium" style={{ minWidth: "180px" }}>{m.name || "—"}</td>
-                                  <td className="py-3 px-4 text-stone-500 text-xs" style={{ minWidth: "130px" }}>{students.find(s => s.id === m.student_id)?.admission_no || "—"}</td>
+                                  <td className="py-3 px-4 font-medium" style={{ minWidth: "160px" }}>{m.name || "—"}</td>
+                                  <td className="py-3 px-4 text-stone-500 text-xs" style={{ minWidth: "110px" }}>{students.find(s => s.id === m.student_id)?.admission_no || "—"}</td>
                                   <td className="py-3 px-4">
-                                    <input type="number" min="0" max="50" value={m.class_score} onChange={(ev) => handleScoreChange(idx, "class_score", ev.target.value)} className="w-20 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                    <input type="number" min="0" max="15" value={m.individual_test} onChange={(ev) => handleScoreChange(idx, "individual_test", ev.target.value)} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
                                   </td>
                                   <td className="py-3 px-4">
-                                    <input type="number" min="0" max="50" value={m.exam_score} onChange={(ev) => handleScoreChange(idx, "exam_score", ev.target.value)} className="w-20 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                    <input type="number" min="0" max="15" value={m.group_work} onChange={(ev) => handleScoreChange(idx, "group_work", ev.target.value)} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
                                   </td>
-                                  <td className="py-3 px-4 font-serif font-semibold">{tot}</td>
-                                  <td className="py-3 px-4 text-stone-400">—</td>
-                                  <td className="py-3 px-4 text-stone-400">—</td>
+                                  <td className="py-3 px-4">
+                                    <input type="number" min="0" max="15" value={m.class_test} onChange={(ev) => handleScoreChange(idx, "class_test", ev.target.value)} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <input type="number" min="0" max="15" value={m.project} onChange={(ev) => handleScoreChange(idx, "project", ev.target.value)} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <input type="number" min="0" max="100" value={m.exam_raw} onChange={(ev) => handleScoreChange(idx, "exam_raw", ev.target.value)} className="w-20 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                  </td>
+                                  <td className="py-3 px-4 font-serif font-semibold">{hasAnyInput ? total : "—"}</td>
                                 </tr>
                               );
                             })
@@ -1319,6 +1380,9 @@ function App() {
                           )}
                         </tbody>
                       </table>
+                      {marksEdit && (
+                        <p className="text-xs text-stone-500 mt-2 px-1">Class Work (Individual Test + Group Work + Class Test + Project, out of 60) is scaled to 50. Exam (out of 100) is scaled to 50. Total is out of 100.</p>
+                      )}
                     </div>
                   </div>
                 )}
