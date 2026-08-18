@@ -864,33 +864,39 @@ function App() {
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col">
-      <div className="bg-violet-950 text-violet-50 px-4 py-3 flex items-center justify-between shadow-md">
-        <div className="flex items-center gap-3">
-          <span className="text-xl">🏅</span>
-          <div>
-            <div className="font-serif text-lg leading-tight">Aduana Model JHS</div>
-            <div className="text-[11px] text-violet-300 -mt-0.5">Results Workflow & Assessment Portal</div>
+      <div className="bg-violet-950 text-violet-50 px-3 sm:px-4 py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-md">
+        <div className="flex items-center justify-between sm:justify-start gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="text-xl">🏅</span>
+            <div>
+              <div className="font-serif text-base sm:text-lg leading-tight">Aduana Model JHS</div>
+              <div className="text-[11px] text-violet-300 -mt-0.5 hidden sm:block">Results Workflow & Assessment Portal</div>
+            </div>
+          </div>
+          <div className="text-right sm:hidden">
+            <div className="font-medium text-violet-100 text-xs">{user.name}</div>
+            <div className="text-[10px] text-violet-300 uppercase tracking-wider">{user.role.replace("_", " ")}</div>
           </div>
         </div>
-        <div className="flex items-center gap-4 text-sm">
-          <div className="text-right hidden sm:block">
+        <div className="flex items-center gap-2 sm:gap-4 text-sm overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+          <div className="text-right hidden sm:block flex-shrink-0">
             <div className="font-medium text-violet-100">{user.name}</div>
             <div className="text-[11px] text-violet-300 uppercase tracking-wider">{user.role.replace("_", " ")}</div>
           </div>
           {["administrator", "super_administrator", "headmaster"].includes(user.role) && (
-            <div className="flex bg-violet-900/80 rounded-lg p-0.5 border border-violet-800">
-              <button onClick={() => setView("exams")} className={`px-3 py-1 rounded-md text-xs font-medium transition ${view === "exams" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Exams</button>
+            <div className="flex bg-violet-900/80 rounded-lg p-0.5 border border-violet-800 flex-shrink-0">
+              <button onClick={() => setView("exams")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "exams" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Exams</button>
               {["administrator", "super_administrator"].includes(user.role) && (
-                <button onClick={() => setView("admin")} className={`px-3 py-1 rounded-md text-xs font-medium transition ${view === "admin" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Admin Panel</button>
+                <button onClick={() => setView("admin")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "admin" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Admin Panel</button>
               )}
-              <button onClick={() => setView("student_approvals")} className={`px-3 py-1 rounded-md text-xs font-medium transition inline-flex items-center gap-1.5 ${view === "student_approvals" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>
+              <button onClick={() => setView("student_approvals")} className={`px-3 py-1 rounded-md text-xs font-medium transition inline-flex items-center gap-1.5 whitespace-nowrap ${view === "student_approvals" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>
                 Student Approvals
                 {pendingStudents.length > 0 && <span className="bg-rose-600 text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{pendingStudents.length}</span>}
               </button>
             </div>
           )}
-          <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white text-xs">Password</button>
-          <button onClick={signOut} className="text-violet-300 hover:text-white text-xs">Sign out</button>
+          <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white text-xs whitespace-nowrap flex-shrink-0">Password</button>
+          <button onClick={signOut} className="text-violet-300 hover:text-white text-xs whitespace-nowrap flex-shrink-0">Sign out</button>
         </div>
       </div>
 
@@ -1329,6 +1335,7 @@ function App() {
                     )}
 
                     {/* Marks Table */}
+                    <div className="text-[11px] text-stone-400 px-4 pt-2 sm:hidden">⇠ Swipe to see all columns ⇢</div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse" style={{ minWidth: marksEdit ? "980px" : "780px" }}>
                         <thead>
