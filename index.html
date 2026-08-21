@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -19,7 +20,16 @@
     }
   }
 </script>
-<style>body { font-family: system-ui, sans-serif; background: #FFFDF7; } .font-serif { font-family: 'Fraunces', Georgia, 'Times New Roman', serif; }</style>
+<style>
+body { font-family: system-ui, sans-serif; background: #FFFDF7; }
+.font-serif { font-family: 'Fraunces', Georgia, 'Times New Roman', serif; }
+@media print {
+  body * { visibility: hidden; }
+  #printable-report, #printable-report * { visibility: visible; }
+  #printable-report { position: absolute; top: 0; left: 0; width: 100%; }
+  .no-print { display: none !important; }
+}
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -41,6 +51,59 @@ const STATUS_META = {
   correction_pending_hm: { label: "Correction — Awaiting Headmaster", color: "bg-violet-100 text-violet-800" },
   locked: { label: "Permanently Locked", color: "bg-stone-800 text-stone-100" },
 };
+
+// Chart-friendly hex versions of the same statuses, kept in sync with
+// STATUS_META above so the dashboard's pictures match the badges elsewhere.
+const STATUS_HEX = {
+  draft: "#a8a29e",
+  submitted: "#f59e0b",
+  admin_returned: "#f43f5e",
+  admin_approved: "#8b5cf6",
+  hm_returned: "#f43f5e",
+  published: "#2F6844",
+  correction_pending_admin: "#f59e0b",
+  correction_pending_hm: "#8b5cf6",
+  locked: "#292524",
+};
+
+const PTA_STATUS_HEX = {
+  pending_admin: "#f59e0b",
+  pending_headmaster: "#8b5cf6",
+  recorded: "#2F6844",
+  rejected_admin: "#A13D2B",
+  rejected_headmaster: "#A13D2B",
+};
+
+const PTA_STATUS_LABELS = {
+  pending_admin: "Pending Admin",
+  pending_headmaster: "Pending Headmaster",
+  recorded: "Recorded (Validated)",
+  rejected_admin: "Rejected by Admin",
+  rejected_headmaster: "Rejected by Headmaster",
+};
+
+// A rotating gold/violet/stone palette for series that don't map to a
+// fixed status (e.g. one bar per class), so charts stay on-brand without
+// needing a manual color per class name.
+const SERIES_PALETTE = ["#F0A500", "#2E1065", "#2F6844", "#A13D2B", "#8b5cf6", "#78716c", "#FFD666", "#5b21b6"];
+
+// Thin wrapper around Chart.js: creates the chart on mount, destroys and
+// recreates it whenever the data/type changes (Chart.js instances can't
+// be mutated cheaply across unrelated data shapes), and cleans up on
+// unmount so repeated visits to the Dashboard tab don't leak canvases.
+function ChartCanvas({ type, data, options, height = 240 }) {
+  const canvasRef = React.useRef(null);
+  const chartRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!canvasRef.current || typeof Chart === "undefined") return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new Chart(canvasRef.current, { type, data, options });
+    return () => { if (chartRef.current) chartRef.current.destroy(); };
+  }, [type, JSON.stringify(data), JSON.stringify(options)]);
+
+  return <div style={{ height }}><canvas ref={canvasRef}></canvas></div>;
+}
 
 function decodeToken(token) {
   try {
@@ -175,7 +238,7 @@ function ParentDashboard({ user, token, onSignOut }) {
     <div className="min-h-screen bg-stone-50 text-stone-900">
       <div className="bg-violet-950 text-violet-50 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xl">🏅</span>
+          <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-8 h-8 object-contain" />
           <div><div className="font-serif text-lg leading-tight">Aduana Model JHS</div>
           <div className="text-[11px] text-violet-300 -mt-0.5">Parent Portal</div></div>
         </div>
@@ -263,7 +326,7 @@ function StudentDashboard({ user, token, onSignOut }) {
     <div className="min-h-screen bg-stone-50 text-stone-900">
       <div className="bg-violet-950 text-violet-50 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xl">🏅</span>
+          <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-8 h-8 object-contain" />
           <div><div className="font-serif text-lg leading-tight">Aduana Model JHS</div>
           <div className="text-[11px] text-violet-300 -mt-0.5">Student Portal</div></div>
         </div>
@@ -381,6 +444,37 @@ function App() {
   const [ptaRejectingId, setPtaRejectingId] = useState(null);
   const [ptaRejectReason, setPtaRejectReason] = useState("");
   const [ptaSubmitting, setPtaSubmitting] = useState(false);
+
+  // Dashboard & printable reports (Admin / Super Admin / Headmaster only)
+  const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [reportType, setReportType] = useState("marks"); // 'marks' | 'pta'
+  const [reportFilters, setReportFilters] = useState({ class: "", subject: "", status: "" });
+  const [reportRows, setReportRows] = useState([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportRun, setReportRun] = useState(false);
+
+  async function loadDashboard() {
+    setDashboardLoading(true);
+    try {
+      setDashboardData(await api("/api/reports/dashboard", token));
+    } catch (e) { showToast(e.message, "error"); } finally { setDashboardLoading(false); }
+  }
+
+  useEffect(() => { if (token && view === "reports") loadDashboard(); }, [token, view]);
+
+  async function runReport() {
+    setReportLoading(true);
+    setReportRun(true);
+    try {
+      const params = new URLSearchParams();
+      if (reportFilters.class) params.set("class", reportFilters.class);
+      if (reportType === "marks" && reportFilters.subject) params.set("subject", reportFilters.subject);
+      if (reportType === "pta" && reportFilters.status) params.set("status", reportFilters.status);
+      const path = reportType === "marks" ? "/api/reports/marks" : "/api/reports/pta";
+      setReportRows(await api(`${path}?${params.toString()}`, token));
+    } catch (e) { showToast(e.message, "error"); } finally { setReportLoading(false); }
+  }
 
   async function updateTermSettings() {
     if (!termForm.term || !termForm.academicYear) return showToast("Enter both term and year.", "error");
@@ -1009,7 +1103,7 @@ function App() {
       <div className="bg-violet-950 text-violet-50 px-3 sm:px-4 py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-md">
         <div className="flex items-center justify-between sm:justify-start gap-3">
           <div className="flex items-center gap-2 sm:gap-3">
-            <span className="text-xl">🏅</span>
+            <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-8 h-8 sm:w-9 sm:h-9 object-contain" />
             <div>
               <div className="font-serif text-base sm:text-lg leading-tight">Aduana Model JHS</div>
               <div className="text-[11px] text-violet-300 -mt-0.5 hidden sm:block">Results Workflow & Assessment Portal</div>
@@ -1041,6 +1135,9 @@ function App() {
                 Accounts
                 {ptaQueue.length > 0 && ["administrator", "super_administrator", "headmaster"].includes(user.role) && <span className="bg-rose-600 text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{ptaQueue.length}</span>}
               </button>
+              {["administrator", "super_administrator", "headmaster"].includes(user.role) && (
+                <button onClick={() => setView("reports")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "reports" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Dashboard</button>
+              )}
             </div>
           )}
           <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white text-xs whitespace-nowrap flex-shrink-0">Password</button>
@@ -1405,6 +1502,181 @@ function App() {
               </div>
             </div>
           )}
+        </div>
+      ) : view === "reports" && ["administrator", "super_administrator", "headmaster"].includes(user.role) ? (
+        /* DASHBOARD & REPORTS VIEW */
+        <div className="max-w-6xl mx-auto p-4 md:p-6 w-full space-y-6">
+          <div>
+            <h1 className="font-serif text-2xl">Dashboard</h1>
+            <p className="text-sm text-stone-500 mt-1">A visual snapshot across students, exam results, and P.T.A. dues.</p>
+          </div>
+
+          {dashboardLoading && !dashboardData ? (
+            <div className="text-center text-stone-400 py-12">Loading dashboard…</div>
+          ) : dashboardData ? (
+            <React.Fragment>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <div className="text-xs text-stone-500 uppercase tracking-wider">Total Students</div>
+                  <div className="text-2xl font-serif mt-1">{dashboardData.studentsByClass.reduce((sum, c) => sum + c.count, 0)}</div>
+                </div>
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <div className="text-xs text-stone-500 uppercase tracking-wider">Exams Published</div>
+                  <div className="text-2xl font-serif mt-1">{dashboardData.examStatusCounts.find((s) => s.status === "published")?.count || 0}</div>
+                </div>
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <div className="text-xs text-stone-500 uppercase tracking-wider">P.T.A. Collected</div>
+                  <div className="text-2xl font-serif mt-1">GHS {(dashboardData.ptaByStatus.find((s) => s.status === "recorded")?.total_amount || 0).toFixed(2)}</div>
+                </div>
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <div className="text-xs text-stone-500 uppercase tracking-wider">P.T.A. Pending</div>
+                  <div className="text-2xl font-serif mt-1">{dashboardData.ptaByStatus.filter((s) => ["pending_admin", "pending_headmaster"].includes(s.status)).reduce((sum, s) => sum + s.count, 0)}</div>
+                </div>
+              </div>
+
+              {/* Charts */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <h2 className="font-serif text-base mb-3">Students by Class</h2>
+                  {dashboardData.studentsByClass.length === 0 ? <div className="text-sm text-stone-400 py-8 text-center">No students yet.</div> : (
+                    <ChartCanvas type="bar" data={{
+                      labels: dashboardData.studentsByClass.map((c) => c.class),
+                      datasets: [{ label: "Students", data: dashboardData.studentsByClass.map((c) => c.count), backgroundColor: dashboardData.studentsByClass.map((_, i) => SERIES_PALETTE[i % SERIES_PALETTE.length]) }],
+                    }} options={{ maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }} />
+                  )}
+                </div>
+
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <h2 className="font-serif text-base mb-3">Exam Status</h2>
+                  {dashboardData.examStatusCounts.length === 0 ? <div className="text-sm text-stone-400 py-8 text-center">No exams yet.</div> : (
+                    <ChartCanvas type="doughnut" data={{
+                      labels: dashboardData.examStatusCounts.map((s) => STATUS_META[s.status]?.label || s.status),
+                      datasets: [{ data: dashboardData.examStatusCounts.map((s) => s.count), backgroundColor: dashboardData.examStatusCounts.map((s) => STATUS_HEX[s.status] || "#a8a29e") }],
+                    }} options={{ maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } } }} />
+                  )}
+                </div>
+
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <h2 className="font-serif text-base mb-3">Subject Averages (Published Exams)</h2>
+                  {dashboardData.subjectAverages.length === 0 ? <div className="text-sm text-stone-400 py-8 text-center">No published results yet.</div> : (
+                    <ChartCanvas type="bar" height={Math.max(240, dashboardData.subjectAverages.length * 32)} data={{
+                      labels: dashboardData.subjectAverages.map((s) => `${s.subject} (${s.class})`),
+                      datasets: [{ label: "Average Score", data: dashboardData.subjectAverages.map((s) => s.avg_score), backgroundColor: dashboardData.subjectAverages.map((_, i) => SERIES_PALETTE[i % SERIES_PALETTE.length]) }],
+                    }} options={{ indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, max: 100 } } }} />
+                  )}
+                </div>
+
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <h2 className="font-serif text-base mb-3">P.T.A. Dues Status</h2>
+                  {dashboardData.ptaByStatus.length === 0 ? <div className="text-sm text-stone-400 py-8 text-center">No P.T.A. payments yet.</div> : (
+                    <React.Fragment>
+                      <ChartCanvas type="doughnut" data={{
+                        labels: dashboardData.ptaByStatus.map((s) => PTA_STATUS_LABELS[s.status] || s.status),
+                        datasets: [{ data: dashboardData.ptaByStatus.map((s) => s.count), backgroundColor: dashboardData.ptaByStatus.map((s) => PTA_STATUS_HEX[s.status] || "#a8a29e") }],
+                      }} options={{ maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } } }} />
+                      <div className="text-xs text-stone-500 mt-2 space-y-0.5">
+                        {dashboardData.ptaByStatus.map((s) => (
+                          <div key={s.status} className="flex justify-between">
+                            <span>{PTA_STATUS_LABELS[s.status] || s.status}</span>
+                            <span className="font-medium text-stone-700">GHS {s.total_amount.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </React.Fragment>
+                  )}
+                </div>
+              </div>
+
+              {/* Printable reports */}
+              <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm no-print">
+                <h2 className="font-serif text-lg mb-1">Print a Report</h2>
+                <p className="text-xs text-stone-500 mb-3">Filter by class, subject, or P.T.A. status, then print or save as PDF from your browser's print dialog.</p>
+
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <div className="flex bg-stone-100 rounded-lg p-0.5">
+                    <button onClick={() => { setReportType("marks"); setReportRun(false); setReportRows([]); }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${reportType === "marks" ? "bg-white shadow-sm text-violet-950" : "text-stone-500"}`}>Marks / Results</button>
+                    <button onClick={() => { setReportType("pta"); setReportRun(false); setReportRows([]); }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${reportType === "pta" ? "bg-white shadow-sm text-violet-950" : "text-stone-500"}`}>P.T.A. Dues</button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <select value={reportFilters.class} onChange={(e) => setReportFilters({ ...reportFilters, class: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="">All classes</option>
+                    {dashboardData.studentsByClass.map((c) => <option key={c.class} value={c.class}>{c.class}</option>)}
+                  </select>
+
+                  {reportType === "marks" && (
+                    <select value={reportFilters.subject} onChange={(e) => setReportFilters({ ...reportFilters, subject: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                      <option value="">All subjects</option>
+                      {[...new Set(dashboardData.subjectAverages.map((s) => s.subject))].map((subj) => <option key={subj} value={subj}>{subj}</option>)}
+                    </select>
+                  )}
+
+                  {reportType === "pta" && (
+                    <select value={reportFilters.status} onChange={(e) => setReportFilters({ ...reportFilters, status: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                      <option value="">All statuses</option>
+                      {Object.entries(PTA_STATUS_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+                    </select>
+                  )}
+
+                  <Btn kind="primary" onClick={runReport} disabled={reportLoading}>{reportLoading ? "Generating…" : "Generate Report"}</Btn>
+                  {reportRun && reportRows.length > 0 && <Btn kind="secondary" onClick={() => window.print()}>Print / Save PDF</Btn>}
+                </div>
+
+                {reportRun && !reportLoading && (
+                  <div className="text-sm text-stone-500">{reportRows.length === 0 ? "No matching records found." : `${reportRows.length} record(s) found.`}</div>
+                )}
+              </div>
+
+              {/* Printable area — only this shows up when printing */}
+              {reportRun && reportRows.length > 0 && (
+                <div id="printable-report" className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm">
+                  <div className="flex items-center gap-3 mb-4 pb-4 border-b border-stone-200">
+                    <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-12 h-12 object-contain" />
+                    <div>
+                      <div className="font-serif text-lg font-bold">Aduana Model JHS</div>
+                      <div className="text-xs text-stone-500">{reportType === "marks" ? "Results Report" : "P.T.A. Dues Report"}{reportFilters.class ? ` — ${reportFilters.class}` : ""}{reportType === "marks" && reportFilters.subject ? ` — ${reportFilters.subject}` : ""}</div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b border-stone-300 text-xs font-semibold uppercase tracking-wider text-stone-500">
+                          {reportType === "marks" ? (
+                            <React.Fragment>
+                              <th className="py-2 pr-4">Class</th><th className="py-2 pr-4">Subject</th><th className="py-2 pr-4">Student</th><th className="py-2 pr-4">Adm. No.</th><th className="py-2 pr-4">Score</th><th className="py-2 pr-4">Grade</th>
+                            </React.Fragment>
+                          ) : (
+                            <React.Fragment>
+                              <th className="py-2 pr-4">Class</th><th className="py-2 pr-4">Student</th><th className="py-2 pr-4">Adm. No.</th><th className="py-2 pr-4">Term</th><th className="py-2 pr-4">Amount</th><th className="py-2 pr-4">Status</th>
+                            </React.Fragment>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100">
+                        {reportRows.map((r, i) => (
+                          <tr key={i}>
+                            {reportType === "marks" ? (
+                              <React.Fragment>
+                                <td className="py-2 pr-4">{r.class}</td><td className="py-2 pr-4">{r.subject}</td><td className="py-2 pr-4">{r.student_name}</td><td className="py-2 pr-4 font-mono text-xs">{r.admission_no}</td><td className="py-2 pr-4">{r.score}</td><td className="py-2 pr-4">{r.grade || "—"}</td>
+                              </React.Fragment>
+                            ) : (
+                              <React.Fragment>
+                                <td className="py-2 pr-4">{r.class}</td><td className="py-2 pr-4">{r.student_name}</td><td className="py-2 pr-4 font-mono text-xs">{r.admission_no}</td><td className="py-2 pr-4">{r.term} {r.academic_year}</td><td className="py-2 pr-4">GHS {Number(r.amount).toFixed(2)}</td><td className="py-2 pr-4">{PTA_STATUS_LABELS[r.status] || r.status}</td>
+                              </React.Fragment>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-[10px] text-stone-400 mt-4 pt-3 border-t border-stone-100">Generated {new Date().toLocaleString()} · Aduana Model JHS Results Workflow & Assessment Portal</div>
+                </div>
+              )}
+            </React.Fragment>
+          ) : null}
         </div>
       ) : (
         /* EXAMS VIEW */
