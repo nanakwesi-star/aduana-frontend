@@ -87,6 +87,22 @@ const PTA_STATUS_LABELS = {
 // needing a manual color per class name.
 const SERIES_PALETTE = ["#F0A500", "#2E1065", "#2F6844", "#A13D2B", "#8b5cf6", "#78716c", "#FFD666", "#5b21b6"];
 
+// The nine official GES JHS subjects, fixed and spelled exactly this way
+// everywhere in the app. Assigning subjects picks from this list instead
+// of free-typing, so "English" and "english" can never both exist.
+const SUBJECTS = [
+  "English Language",
+  "Mathematics",
+  "Integrated Science",
+  "Computing",
+  "Ghanaian Language",
+  "Career Technology",
+  "Creative Arts and Design",
+  "Social Studies",
+  "RME",
+];
+
+
 // Thin wrapper around Chart.js: creates the chart on mount, destroys and
 // recreates it whenever the data/type changes (Chart.js instances can't
 // be mutated cheaply across unrelated data shapes), and cleans up on
@@ -453,6 +469,45 @@ function App() {
   const [reportRows, setReportRows] = useState([]);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportRun, setReportRun] = useState(false);
+  const [terminalClass, setTerminalClass] = useState("");
+  const [terminalStudents, setTerminalStudents] = useState([]);
+  const [terminalStudentId, setTerminalStudentId] = useState("");
+  const [terminalGenerating, setTerminalGenerating] = useState(false);
+  const [terminalResult, setTerminalResult] = useState(null);
+
+  useEffect(() => {
+    if (!terminalClass || !token) { setTerminalStudents([]); return; }
+    api(`/api/students?class=${encodeURIComponent(terminalClass)}&status=approved`, token)
+      .then(setTerminalStudents)
+      .catch((e) => showToast(e.message, "error"));
+  }, [terminalClass, token]);
+
+  async function generateTerminalReport() {
+    if (!terminalStudentId) return showToast("Select a student first.", "error");
+    setTerminalGenerating(true);
+    setTerminalResult(null);
+    try {
+      const result = await api(`/api/reports/terminal/${terminalStudentId}`, token, { method: "POST" });
+      setTerminalResult(result);
+      showToast("Terminal report generated.", "success");
+    } catch (e) { showToast(e.message, "error"); } finally { setTerminalGenerating(false); }
+  }
+
+  async function downloadTerminalReportPdf(studentId, studentName) {
+    try {
+      const res = await fetch(`${API_BASE}/api/reports/terminal/${studentId}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Could not download the report — try generating it again.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${studentName.replace(/\s+/g, "_")}_Terminal_Report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) { showToast(e.message, "error"); }
+  }
 
   async function loadDashboard() {
     setDashboardLoading(true);
@@ -1276,7 +1331,10 @@ function App() {
                       ))}
                     </div>
                     <div className="flex items-center gap-1">
-                      <input type="text" placeholder="Subject name" value={assignSubject[c.id]?.subject || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], subject: e.target.value } })} className="border rounded px-2 py-1 text-xs flex-1" />
+                      <select value={assignSubject[c.id]?.subject || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], subject: e.target.value } })} className="border rounded px-2 py-1 text-xs bg-white flex-1">
+                        <option value="" disabled>Select subject…</option>
+                        {SUBJECTS.filter((subj) => !c.subjects?.some((sub) => sub.subject === subj)).map((subj) => <option key={subj} value={subj}>{subj}</option>)}
+                      </select>
                       <select value={assignSubject[c.id]?.teacherId || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], teacherId: e.target.value } })} className="border rounded px-2 py-1 text-xs bg-white flex-1">
                         <option value="" disabled>Select teacher…</option>
                         {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1597,35 +1655,59 @@ function App() {
                   <div className="flex bg-stone-100 rounded-lg p-0.5">
                     <button onClick={() => { setReportType("marks"); setReportRun(false); setReportRows([]); }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${reportType === "marks" ? "bg-white shadow-sm text-violet-950" : "text-stone-500"}`}>Marks / Results</button>
                     <button onClick={() => { setReportType("pta"); setReportRun(false); setReportRows([]); }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${reportType === "pta" ? "bg-white shadow-sm text-violet-950" : "text-stone-500"}`}>P.T.A. Dues</button>
+                    <button onClick={() => { setReportType("terminal"); setReportRun(false); setReportRows([]); }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${reportType === "terminal" ? "bg-white shadow-sm text-violet-950" : "text-stone-500"}`}>Terminal Report</button>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2 mb-3">
-                  <select value={reportFilters.class} onChange={(e) => setReportFilters({ ...reportFilters, class: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
-                    <option value="">All classes</option>
-                    {dashboardData.studentsByClass.map((c) => <option key={c.class} value={c.class}>{c.class}</option>)}
-                  </select>
-
-                  {reportType === "marks" && (
-                    <select value={reportFilters.subject} onChange={(e) => setReportFilters({ ...reportFilters, subject: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
-                      <option value="">All subjects</option>
-                      {[...new Set(dashboardData.subjectAverages.map((s) => s.subject))].map((subj) => <option key={subj} value={subj}>{subj}</option>)}
+                {reportType === "terminal" ? (
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <select value={terminalClass} onChange={(e) => { setTerminalClass(e.target.value); setTerminalStudentId(""); setTerminalResult(null); }} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                      <option value="">Select class…</option>
+                      {dashboardData.studentsByClass.map((c) => <option key={c.class} value={c.class}>{c.class}</option>)}
                     </select>
-                  )}
-
-                  {reportType === "pta" && (
-                    <select value={reportFilters.status} onChange={(e) => setReportFilters({ ...reportFilters, status: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
-                      <option value="">All statuses</option>
-                      {Object.entries(PTA_STATUS_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+                    <select value={terminalStudentId} onChange={(e) => { setTerminalStudentId(e.target.value); setTerminalResult(null); }} disabled={!terminalClass} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white disabled:bg-stone-100">
+                      <option value="">Select student…</option>
+                      {terminalStudents.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
                     </select>
-                  )}
+                    <Btn kind="primary" onClick={generateTerminalReport} disabled={terminalGenerating || !terminalStudentId}>{terminalGenerating ? "Generating…" : "Generate Terminal Report"}</Btn>
+                    {terminalResult && (
+                      <Btn kind="secondary" onClick={() => downloadTerminalReportPdf(terminalStudentId, terminalStudents.find((s) => s.id === terminalStudentId)?.full_name || "Student")}>Download PDF</Btn>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <select value={reportFilters.class} onChange={(e) => setReportFilters({ ...reportFilters, class: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                      <option value="">All classes</option>
+                      {dashboardData.studentsByClass.map((c) => <option key={c.class} value={c.class}>{c.class}</option>)}
+                    </select>
 
-                  <Btn kind="primary" onClick={runReport} disabled={reportLoading}>{reportLoading ? "Generating…" : "Generate Report"}</Btn>
-                  {reportRun && reportRows.length > 0 && <Btn kind="secondary" onClick={() => window.print()}>Print / Save PDF</Btn>}
-                </div>
+                    {reportType === "marks" && (
+                      <select value={reportFilters.subject} onChange={(e) => setReportFilters({ ...reportFilters, subject: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                        <option value="">All subjects</option>
+                        {[...new Set(dashboardData.subjectAverages.map((s) => s.subject))].map((subj) => <option key={subj} value={subj}>{subj}</option>)}
+                      </select>
+                    )}
 
-                {reportRun && !reportLoading && (
+                    {reportType === "pta" && (
+                      <select value={reportFilters.status} onChange={(e) => setReportFilters({ ...reportFilters, status: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                        <option value="">All statuses</option>
+                        {Object.entries(PTA_STATUS_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+                      </select>
+                    )}
+
+                    <Btn kind="primary" onClick={runReport} disabled={reportLoading}>{reportLoading ? "Generating…" : "Generate Report"}</Btn>
+                    {reportRun && reportRows.length > 0 && <Btn kind="secondary" onClick={() => window.print()}>Print / Save PDF</Btn>}
+                  </div>
+                )}
+
+                {reportType !== "terminal" && reportRun && !reportLoading && (
                   <div className="text-sm text-stone-500">{reportRows.length === 0 ? "No matching records found." : `${reportRows.length} record(s) found.`}</div>
+                )}
+                {reportType === "terminal" && terminalResult && (
+                  <div className="text-sm text-stone-500">
+                    {terminalResult.subjectsIncluded} of {SUBJECTS.length} subjects published · Aggregate {terminalResult.aggregateTotal ?? "—"}
+                    {terminalResult.positionInClass ? ` · Position ${terminalResult.positionInClass} of ${terminalResult.classSize}` : ""}
+                  </div>
                 )}
               </div>
 
