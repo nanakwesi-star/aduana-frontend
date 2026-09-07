@@ -62,4 +62,2283 @@ const STATUS_HEX = {
   hm_returned: "#f43f5e",
   published: "#2F6844",
   correction_pending_admin: "#f59e0b",
-  correction_pending_
+  correction_pending_hm: "#8b5cf6",
+  locked: "#292524",
+};
+
+const PTA_STATUS_HEX = {
+  pending_admin: "#f59e0b",
+  pending_headmaster: "#8b5cf6",
+  recorded: "#2F6844",
+  rejected_admin: "#A13D2B",
+  rejected_headmaster: "#A13D2B",
+};
+
+const PTA_STATUS_LABELS = {
+  pending_admin: "Pending Admin",
+  pending_headmaster: "Pending Headmaster",
+  recorded: "Recorded (Validated)",
+  rejected_admin: "Rejected by Admin",
+  rejected_headmaster: "Rejected by Headmaster",
+};
+
+// A rotating gold/violet/stone palette for series that don't map to a
+// fixed status (e.g. one bar per class), so charts stay on-brand without
+// needing a manual color per class name.
+const SERIES_PALETTE = ["#F0A500", "#2E1065", "#2F6844", "#A13D2B", "#8b5cf6", "#78716c", "#FFD666", "#5b21b6"];
+
+// The nine official GES JHS subjects, fixed and spelled exactly this way
+// everywhere in the app. Assigning subjects picks from this list instead
+// of free-typing, so "English" and "english" can never both exist.
+const SUBJECTS = [
+  "English Language",
+  "Mathematics",
+  "Integrated Science",
+  "Computing",
+  "Ghanaian Language",
+  "Career Technology",
+  "Creative Arts and Design",
+  "Social Studies",
+  "RME",
+];
+
+
+// Thin wrapper around Chart.js: creates the chart on mount, destroys and
+// recreates it whenever the data/type changes (Chart.js instances can't
+// be mutated cheaply across unrelated data shapes), and cleans up on
+// unmount so repeated visits to the Dashboard tab don't leak canvases.
+function ChartCanvas({ type, data, options, height = 240 }) {
+  const canvasRef = React.useRef(null);
+  const chartRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!canvasRef.current || typeof Chart === "undefined") return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new Chart(canvasRef.current, { type, data, options });
+    return () => { if (chartRef.current) chartRef.current.destroy(); };
+  }, [type, JSON.stringify(data), JSON.stringify(options)]);
+
+  return <div style={{ height }}><canvas ref={canvasRef}></canvas></div>;
+}
+
+function decodeToken(token) {
+  try {
+    const payload = token.split(".")[1];
+    const norm = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = norm + "===".slice((norm.length + 3) % 4);
+    return JSON.parse(atob(padded));
+  } catch { return null; }
+}
+
+function fmt(ts) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleString(undefined, { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function getOrdinalSuffix(n) {
+  if (!n || isNaN(n)) return "—";
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+async function api(path, token, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
+
+function Badge({ status }) {
+  const meta = STATUS_META[status] || { label: status, color: "bg-stone-200 text-stone-700" };
+  return <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${meta.color}`}>{meta.label}</span>;
+}
+
+const PTA_STATUS_META = {
+  pending_admin: { label: "Awaiting Admin", color: "bg-amber-100 text-amber-800" },
+  pending_headmaster: { label: "Awaiting Headmaster", color: "bg-violet-100 text-violet-800" },
+  recorded: { label: "Recorded", color: "bg-emerald-100 text-emerald-800" },
+  rejected_admin: { label: "Returned by Admin", color: "bg-rose-100 text-rose-800" },
+  rejected_headmaster: { label: "Returned by Headmaster", color: "bg-rose-100 text-rose-800" },
+};
+
+function PtaStatusBadge({ status }) {
+  const meta = PTA_STATUS_META[status] || { label: status, color: "bg-stone-200 text-stone-700" };
+  return <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${meta.color}`}>{meta.label}</span>;
+}
+
+function Btn({ children, onClick, kind = "secondary", disabled }) {
+  const styles = {
+    primary: "bg-gold text-violet-950 font-semibold hover:bg-gold-light",
+    success: "bg-emerald-700 text-white hover:bg-emerald-800",
+    danger: "bg-rose-700 text-white hover:bg-rose-800",
+    secondary: "bg-stone-200 text-stone-800 hover:bg-stone-300",
+  };
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed ${styles[kind]}`}>
+      {children}
+    </button>
+  );
+}
+
+function ChangePasswordModal({ token, onClose, showToastFn }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (newPassword.length < 8) return setError("New password must be at least 8 characters.");
+    if (newPassword !== confirmPassword) return setError("New passwords do not match.");
+    setSaving(true); setError(null);
+    try {
+      await api("/api/auth/change-password", token, { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) });
+      showToastFn("Password changed.", "success");
+      onClose();
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-5">
+        <div className="font-medium mb-3">Change Password</div>
+        <input type="password" placeholder="Current password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm mb-2" />
+        <input type="password" placeholder="New password (min 8 chars)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm mb-2" />
+        <input type="password" placeholder="Confirm new password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm mb-2" />
+        {error && <div className="text-rose-700 text-xs mb-2">{error}</div>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn kind="primary" onClick={submit} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParentDashboard({ user, token, onSignOut }) {
+  const [children, setChildren] = useState([]);
+  const [selectedChild, setSelectedChild] = useState(null);
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [toast, setToast] = useState(null);
+  function showToast(msg, kind = "info") { setToast({ msg, kind }); setTimeout(() => setToast(null), 3000); }
+
+  useEffect(() => {
+    api("/api/parent/children", token).then((rows) => {
+      setChildren(rows);
+      if (rows.length === 1) setSelectedChild(rows[0].id);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [token]);
+
+  useEffect(() => {
+    if (!selectedChild) { setResults(null); return; }
+    api(`/api/parent/children/${selectedChild}/results`, token).then(setResults).catch(() => setResults([]));
+  }, [selectedChild, token]);
+
+  const child = children.find((c) => c.id === selectedChild);
+
+  return (
+    <div className="min-h-screen bg-stone-50 text-stone-900">
+      <div className="bg-violet-950 text-violet-50 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-8 h-8 object-contain" />
+          <div><div className="font-serif text-lg leading-tight">Aduana Model JHS</div>
+          <div className="text-[11px] text-violet-300 -mt-0.5">Parent Portal</div></div>
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-violet-200">{user.name} · Parent</span>
+          <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white">Change password</button>
+          <button onClick={onSignOut} className="text-violet-300 hover:text-white">Sign out</button>
+        </div>
+      </div>
+      {showChangePw && <ChangePasswordModal token={token} onClose={() => setShowChangePw(false)} showToastFn={showToast} />}
+      {toast && <div className={`fixed bottom-4 right-4 px-4 py-2.5 rounded-lg shadow-lg text-sm text-white z-50 ${toast.kind === "error" ? "bg-rose-700" : toast.kind === "success" ? "bg-emerald-700" : "bg-stone-800"}`}>{toast.msg}</div>}
+
+      <div className="max-w-3xl mx-auto p-4 md:p-6">
+        {loading ? (
+          <div className="text-stone-400 text-sm">Loading…</div>
+        ) : children.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-xl p-6 text-sm text-stone-500">
+            No children are linked to your account yet. Contact the school office to have them linked.
+          </div>
+        ) : (
+          <>
+            <h1 className="font-serif text-2xl mb-3">My Children</h1>
+            <div className="flex flex-wrap gap-2 mb-5">
+              {children.map((c) => (
+                <button key={c.id} onClick={() => setSelectedChild(c.id)}
+                  className={`px-3 py-2 rounded-lg border text-sm ${selectedChild === c.id ? "bg-violet-800 text-white border-violet-800" : "bg-white border-stone-200 hover:border-violet-300"}`}>
+                  {c.full_name} <span className="opacity-70">· {c.class}</span>
+                </button>
+              ))}
+            </div>
+
+            {child && (
+              <div>
+                <div className="bg-white border border-stone-200 rounded-xl p-4 mb-3">
+                  <div className="font-medium">{child.full_name}</div>
+                  <div className="text-sm text-stone-500">{child.class} · Admission No. {child.admission_no}</div>
+                </div>
+                <h2 className="font-serif text-lg mb-2">Published Results</h2>
+                {results === null ? (
+                  <div className="text-sm text-stone-400">Loading…</div>
+                ) : results.length === 0 ? (
+                  <div className="bg-white border border-stone-200 rounded-xl p-4 text-sm text-stone-500">No published results yet.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {results.map((r, i) => (
+                      <div key={i} className="bg-white border border-stone-200 rounded-xl p-4 flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{r.subject}</div>
+                          <div className="text-xs text-stone-500">{r.term} {r.academic_year} · Published {fmt(r.published_at)}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-serif">{r.score}</div>
+                          {r.grade && <div className="text-xs text-stone-500">Grade {r.grade}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StudentDashboard({ user, token, onSignOut }) {
+  const [me, setMe] = useState(null);
+  const [results, setResults] = useState(null);
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [toast, setToast] = useState(null);
+  function showToast(msg, kind = "info") { setToast({ msg, kind }); setTimeout(() => setToast(null), 3000); }
+
+  useEffect(() => {
+    api("/api/student/me", token).then(setMe).catch(() => {});
+    api("/api/student/results", token).then(setResults).catch(() => setResults([]));
+  }, [token]);
+
+  const average = results && results.length
+    ? (results.reduce((sum, r) => sum + Number(r.score), 0) / results.length).toFixed(1)
+    : null;
+
+  return (
+    <div className="min-h-screen bg-stone-50 text-stone-900">
+      <div className="bg-violet-950 text-violet-50 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-8 h-8 object-contain" />
+          <div><div className="font-serif text-lg leading-tight">Aduana Model JHS</div>
+          <div className="text-[11px] text-violet-300 -mt-0.5">Student Portal</div></div>
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-violet-200">{user.name} · Student</span>
+          <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white">Change password</button>
+          <button onClick={onSignOut} className="text-violet-300 hover:text-white">Sign out</button>
+        </div>
+      </div>
+      {showChangePw && <ChangePasswordModal token={token} onClose={() => setShowChangePw(false)} showToastFn={showToast} />}
+      {toast && <div className={`fixed bottom-4 right-4 px-4 py-2.5 rounded-lg shadow-lg text-sm text-white z-50 ${toast.kind === "error" ? "bg-rose-700" : toast.kind === "success" ? "bg-emerald-700" : "bg-stone-800"}`}>{toast.msg}</div>}
+
+      <div className="max-w-3xl mx-auto p-4 md:p-6">
+        <h1 className="font-serif text-2xl mb-1">Welcome back, {user.name.split(" ")[0]}!</h1>
+        {me && <div className="text-sm text-stone-500 mb-4">{me.class} · Admission No. {me.admission_no}</div>}
+
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <div className="bg-white border border-stone-200 rounded-xl p-4 text-center">
+            <div className="text-2xl font-serif">{results ? results.length : "—"}</div>
+            <div className="text-xs text-stone-500">Published Results</div>
+          </div>
+          <div className="bg-white border border-stone-200 rounded-xl p-4 text-center">
+            <div className="text-2xl font-serif">{average ?? "—"}</div>
+            <div className="text-xs text-stone-500">Average Score</div>
+          </div>
+        </div>
+
+        <h2 className="font-serif text-lg mb-2">My Results</h2>
+        {results === null ? (
+          <div className="text-sm text-stone-400">Loading…</div>
+        ) : results.length === 0 ? (
+          <div className="bg-white border border-stone-200 rounded-xl p-4 text-sm text-stone-500">No published results yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {results.map((r, i) => (
+              <div key={i} className="bg-white border border-stone-200 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{r.subject}</div>
+                  <div className="text-xs text-stone-500">{r.term} {r.academic_year} · Published {fmt(r.published_at)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-serif">{r.score}</div>
+                  {r.grade && <div className="text-xs text-stone-500">Grade {r.grade}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StudentsBreakdownModal({ token, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [breakdownView, setBreakdownView] = useState("class"); // "class" | "sex"
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const rows = await api("/api/students", token);
+        setStudents(rows);
+      } catch (e) { setError(e.message); }
+      setLoading(false);
+    })();
+  }, []);
+
+  const byClass = React.useMemo(() => {
+    const groups = {};
+    students.forEach((s) => {
+      groups[s.class] = groups[s.class] || [];
+      groups[s.class].push(s);
+    });
+    return Object.keys(groups).sort().map((c) => ({
+      class: c,
+      students: groups[c].slice().sort((a, b) => a.full_name.localeCompare(b.full_name)),
+    }));
+  }, [students]);
+
+  const bySex = React.useMemo(() => {
+    const labels = { M: "Male", F: "Female" };
+    const groups = { M: [], F: [], Unspecified: [] };
+    students.forEach((s) => {
+      const key = s.sex === "M" || s.sex === "F" ? s.sex : "Unspecified";
+      groups[key].push(s);
+    });
+    return ["M", "F", "Unspecified"]
+      .filter((k) => groups[k].length > 0)
+      .map((k) => ({
+        label: labels[k] || "Not recorded",
+        students: groups[k].slice().sort((a, b) => a.full_name.localeCompare(b.full_name)),
+      }));
+  }, [students]);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-stone-200">
+          <div className="font-serif text-lg">Students ({students.length})</div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 text-xl leading-none">&times;</button>
+        </div>
+
+        <div className="flex gap-2 px-4 pt-3">
+          <button onClick={() => setBreakdownView("class")} className={`px-3 py-1.5 rounded-full text-xs font-medium ${breakdownView === "class" ? "bg-purple-800 text-white" : "bg-stone-100 text-stone-600"}`}>By Class</button>
+          <button onClick={() => setBreakdownView("sex")} className={`px-3 py-1.5 rounded-full text-xs font-medium ${breakdownView === "sex" ? "bg-purple-800 text-white" : "bg-stone-100 text-stone-600"}`}>By Sex</button>
+        </div>
+
+        <div className="p-4 overflow-y-auto flex-1">
+          {loading ? (
+            <div className="text-center text-stone-400 py-8">Loading…</div>
+          ) : error ? (
+            <div className="text-rose-700 text-sm">{error}</div>
+          ) : breakdownView === "class" ? (
+            byClass.length === 0 ? <div className="text-stone-400 text-sm text-center py-8">No students yet.</div> : (
+              <div className="space-y-4">
+                {byClass.map((g) => (
+                  <div key={g.class}>
+                    <div className="text-xs uppercase tracking-wider text-stone-500 mb-1.5">{g.class} — {g.students.length}</div>
+                    <div className="space-y-1">
+                      {g.students.map((s) => (
+                        <div key={s.id} className="text-sm text-stone-700 flex justify-between border-b border-stone-100 pb-1">
+                          <span>{s.full_name}</span>
+                          <span className="text-stone-400">{s.admission_no}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            bySex.length === 0 ? <div className="text-stone-400 text-sm text-center py-8">No students yet.</div> : (
+              <div className="space-y-4">
+                {bySex.map((g) => (
+                  <div key={g.label}>
+                    <div className="text-xs uppercase tracking-wider text-stone-500 mb-1.5">{g.label} — {g.students.length}</div>
+                    <div className="space-y-1">
+                      {g.students.map((s) => (
+                        <div key={s.id} className="text-sm text-stone-700 flex justify-between border-b border-stone-100 pb-1">
+                          <span>{s.full_name}</span>
+                          <span className="text-stone-400">{s.class}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState(null);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
+  const [exams, setExams] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [exam, setExam] = useState(null);
+  const [tab, setTab] = useState("add_student");
+  const [auditLog, setAuditLog] = useState([]);
+  const [versions, setVersions] = useState([]);
+  const [reportCards, setReportCards] = useState([]);
+  const [pendingCorrection, setPendingCorrection] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [myAssignments, setMyAssignments] = useState([]);
+  const [currentTerm, setCurrentTerm] = useState(null);
+  const [selectedAssignment, setSelectedAssignment] = useState("");
+  const [newStudent, setNewStudent] = useState({ fullName: "", admissionNo: "", parentPhone: "", sex: "" });
+
+  // Builds and downloads a small CSV template so bulk uploads use the
+  // exact column headers the backend expects. CSV (not .xlsx) keeps this
+  // dependency-free while still opening cleanly in Excel/Sheets.
+  function downloadCsvTemplate(filename, headers, exampleRow) {
+    const csv = [headers.join(","), exampleRow.join(",")].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  const [marksEdit, setMarksEdit] = useState(null);
+  const [correctionMode, setCorrectionMode] = useState(false);
+  const [modal, setModal] = useState(null);
+  const [reason, setReason] = useState("");
+  const [view, setView] = useState("exams");
+  const [staffList, setStaffList] = useState([]);
+  const [classList, setClassList] = useState([]);
+  const [newStaff, setNewStaff] = useState({ name: "", email: "", password: "", role: "teacher" });
+  const [newClass, setNewClass] = useState({ name: "", academicYear: "2026" });
+  const [termForm, setTermForm] = useState({ term: "Term 2", academicYear: "2026" });
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [canManageStudents, setCanManageStudents] = useState(false);
+  const [pendingStudents, setPendingStudents] = useState([]);
+  const [rejectingStudentId, setRejectingStudentId] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [adminTab, setAdminTab] = useState("term");
+  const [ptaMyStatus, setPtaMyStatus] = useState({ isCollector: false, scopes: [] });
+  const [ptaStudents, setPtaStudents] = useState([]);
+  const [ptaMyPayments, setPtaMyPayments] = useState([]);
+  const [ptaNewPayment, setPtaNewPayment] = useState({ studentId: "", amount: "" });
+  const [ptaCollectors, setPtaCollectors] = useState([]);
+  const [ptaNewCollector, setPtaNewCollector] = useState({ teacherId: "", classId: "" });
+  const [ptaQueue, setPtaQueue] = useState([]);
+  const [ptaRejectingId, setPtaRejectingId] = useState(null);
+  const [ptaRejectReason, setPtaRejectReason] = useState("");
+  const [ptaSubmitting, setPtaSubmitting] = useState(false);
+
+  // Dashboard & printable reports (Admin / Super Admin / Headmaster only)
+  const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [showStudentsModal, setShowStudentsModal] = useState(false);
+  const [reportType, setReportType] = useState("marks"); // 'marks' | 'pta'
+  const [reportFilters, setReportFilters] = useState({ class: "", subject: "", status: "" });
+  const [reportRows, setReportRows] = useState([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportRun, setReportRun] = useState(false);
+  const [terminalClass, setTerminalClass] = useState("");
+  const [terminalStudents, setTerminalStudents] = useState([]);
+  const [terminalStudentId, setTerminalStudentId] = useState("");
+  const [terminalGenerating, setTerminalGenerating] = useState(false);
+  const [terminalResult, setTerminalResult] = useState(null);
+
+  useEffect(() => {
+    if (!terminalClass || !token) { setTerminalStudents([]); return; }
+    api(`/api/students?class=${encodeURIComponent(terminalClass)}&status=approved`, token)
+      .then(setTerminalStudents)
+      .catch((e) => showToast(e.message, "error"));
+  }, [terminalClass, token]);
+
+  async function generateTerminalReport() {
+    if (!terminalStudentId) return showToast("Select a student first.", "error");
+    setTerminalGenerating(true);
+    setTerminalResult(null);
+    try {
+      const result = await api(`/api/reports/terminal/${terminalStudentId}`, token, { method: "POST" });
+      setTerminalResult(result);
+      showToast("Terminal report generated.", "success");
+    } catch (e) { showToast(e.message, "error"); } finally { setTerminalGenerating(false); }
+  }
+
+  async function downloadTerminalReportPdf(studentId, studentName) {
+    try {
+      const res = await fetch(`${API_BASE}/api/reports/terminal/${studentId}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Could not download the report — try generating it again.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${studentName.replace(/\s+/g, "_")}_Terminal_Report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function loadDashboard() {
+    setDashboardLoading(true);
+    try {
+      setDashboardData(await api("/api/reports/dashboard", token));
+    } catch (e) { showToast(e.message, "error"); } finally { setDashboardLoading(false); }
+  }
+
+  useEffect(() => { if (token && view === "reports") loadDashboard(); }, [token, view]);
+
+  async function runReport() {
+    setReportLoading(true);
+    setReportRun(true);
+    try {
+      const params = new URLSearchParams();
+      if (reportFilters.class) params.set("class", reportFilters.class);
+      if (reportType === "marks" && reportFilters.subject) params.set("subject", reportFilters.subject);
+      if (reportType === "pta" && reportFilters.status) params.set("status", reportFilters.status);
+      const path = reportType === "marks" ? "/api/reports/marks" : "/api/reports/pta";
+      setReportRows(await api(`${path}?${params.toString()}`, token));
+    } catch (e) { showToast(e.message, "error"); } finally { setReportLoading(false); }
+  }
+
+  async function updateTermSettings() {
+    if (!termForm.term || !termForm.academicYear) return showToast("Enter both term and year.", "error");
+    try {
+      const updated = await api("/api/admin/settings/term", token, { method: "PUT", body: JSON.stringify({ term: termForm.term, academicYear: Number(termForm.academicYear) }) });
+      setCurrentTerm(updated);
+      showToast("Current term updated.", "success");
+    } catch (e) { showToast(e.message, "error"); }
+  }
+  const [assignSubject, setAssignSubject] = useState({});
+
+  async function loadAdminData() {
+    try {
+      const [staff, classes] = await Promise.all([
+        api("/api/admin/users", token),
+        api("/api/admin/classes", token),
+      ]);
+      setStaffList(staff);
+      setClassList(classes);
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  useEffect(() => { if (token && view === "admin") loadAdminData(); }, [token, view]);
+
+  async function createStaff() {
+    if (!newStaff.name || !newStaff.email || !newStaff.password) return showToast("Fill in name, email, and password.", "error");
+    try {
+      await api("/api/admin/users", token, { method: "POST", body: JSON.stringify(newStaff) });
+      showToast("Staff account created.", "success");
+      setNewStaff({ name: "", email: "", password: "", role: "teacher" });
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function deactivateStaff(id) {
+    try {
+      await api(`/api/admin/users/${id}/deactivate`, token, { method: "PATCH" });
+      showToast("Account deactivated.", "success");
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function deleteStaffAccount(id, name) {
+    if (!window.confirm(`Permanently delete ${name}'s account? This also permanently deletes any exams, marks, and records they created. This cannot be undone.`)) return;
+    try {
+      await api(`/api/admin/users/${id}`, token, { method: "DELETE" });
+      showToast("Account permanently deleted.", "success");
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  const [resetPwFor, setResetPwFor] = useState(null);
+  const [resetPwValue, setResetPwValue] = useState("");
+
+  async function resetAccountPassword(id) {
+    if (!resetPwValue || resetPwValue.length < 8) return showToast("New password must be at least 8 characters.", "error");
+    try {
+      await api(`/api/admin/users/${id}/reset-password`, token, { method: "PATCH", body: JSON.stringify({ newPassword: resetPwValue }) });
+      showToast("Password reset.", "success");
+      setResetPwFor(null); setResetPwValue("");
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function createClass() {
+    if (!newClass.name) return showToast("Enter a class name.", "error");
+    try {
+      await api("/api/admin/classes", token, { method: "POST", body: JSON.stringify({ ...newClass, academicYear: Number(newClass.academicYear) }) });
+      showToast("Class created.", "success");
+      setNewClass({ name: "", academicYear: "2026" });
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function deleteClass(id, name) {
+    if (!window.confirm(`Permanently delete the class "${name}"? This cannot be undone.`)) return;
+    try {
+      await api(`/api/admin/classes/${id}`, token, { method: "DELETE" });
+      showToast("Class deleted.", "success");
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function setFormMaster(classId, teacherId) {
+    try {
+      await api(`/api/admin/classes/${classId}/form-master`, token, { method: "PATCH", body: JSON.stringify({ teacherId }) });
+      showToast("Form master set.", "success");
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function assignSubjectTeacher(classId) {
+    const { subject, teacherId } = assignSubject[classId] || {};
+    if (!subject || !teacherId) return showToast("Pick a subject and teacher.", "error");
+    try {
+      await api(`/api/admin/classes/${classId}/subjects`, token, { method: "POST", body: JSON.stringify({ subject, teacherId }) });
+      showToast("Subject teacher assigned.", "success");
+      setAssignSubject({ ...assignSubject, [classId]: {} });
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function removeSubjectAssignment(classId, subject) {
+    try {
+      await api(`/api/admin/classes/${classId}/subjects/${encodeURIComponent(subject)}`, token, { method: "DELETE" });
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  const [parentsList, setParentsList] = useState([]);
+  const [newParent, setNewParent] = useState({ name: "", email: "", password: "", admissionNos: "" });
+
+  async function loadParents() {
+    try { setParentsList(await api("/api/admin/parents", token)); } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function createParent() {
+    if (!newParent.name || !newParent.email || !newParent.password) return showToast("Fill in name, email, and password.", "error");
+    const admissionNos = newParent.admissionNos.split(",").map((s) => s.trim()).filter(Boolean);
+    try {
+      const result = await api("/api/admin/parents", token, { method: "POST", body: JSON.stringify({ ...newParent, admissionNos }) });
+      showToast(`Parent account created. Linked: ${result.linked.join(", ") || "none yet"}.${result.notFound.length ? " Not found: " + result.notFound.join(", ") : ""}`, result.notFound.length ? "error" : "success");
+      setNewParent({ name: "", email: "", password: "", admissionNos: "" });
+      loadParents();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  const [allStudents, setAllStudents] = useState([]);
+  const [credentialForm, setCredentialForm] = useState({});
+  const [showCredentialFor, setShowCredentialFor] = useState(null);
+
+  async function loadAllStudents() {
+    try { setAllStudents(await api("/api/students", token)); } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function issueCredentials(studentId) {
+    const form = credentialForm[studentId] || {};
+    if (!form.email || !form.password) return showToast("Enter an email and password.", "error");
+    try {
+      await api(`/api/admin/students/${studentId}/set-credentials`, token, { method: "POST", body: JSON.stringify(form) });
+      showToast("Login issued.", "success");
+      setShowCredentialFor(null);
+      setCredentialForm({ ...credentialForm, [studentId]: {} });
+      loadAllStudents();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  useEffect(() => { if (token && view === "admin") { loadParents(); loadAllStudents(); } }, [token, view]);
+
+  function showToast(msg, kind = "info") { setToast({ msg, kind }); setTimeout(() => setToast(null), 3500); }
+
+  async function signIn() {
+    if (!email.trim() || !password) return setLoginError("Enter your email and password.");
+    setLoggingIn(true); setLoginError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Sign-in failed.");
+      setUser(json.user); setToken(json.token);
+    } catch (e) {
+      setLoginError(e.message);
+    }
+    setLoggingIn(false);
+  }
+  function signOut() { setToken(null); setUser(null); setEmail(""); setPassword(""); setExams([]); setExam(null); setSelectedId(null); setView("exams"); }
+
+  const loadExams = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try { setExams(await api("/api/exams", token)); } catch (e) { showToast(e.message, "error"); }
+    setLoading(false);
+  }, [token]);
+
+  const loadExamDetail = useCallback(async (id) => {
+    if (!token || !id) return;
+    setLoading(true);
+    try {
+      const data = await api(`/api/exams/${id}`, token);
+      setExam(data); setMarksEdit(null);
+      // Marks entry should only ever list Headmaster-approved students —
+      // regardless of who's viewing — so pending additions stay out of
+      // the marks sheet until validated.
+      const s = await api(`/api/students?class=${encodeURIComponent(data.class)}&status=approved`, token);
+      setStudents(s);
+      // Only an Administrator, or the Form Master assigned to this class, may
+      // add students here — checked server-side so the client can't fake it.
+      if (["administrator", "super_administrator"].includes(user?.role)) {
+        setCanManageStudents(true);
+      } else if (user?.role === "teacher") {
+        api(`/api/students/can-manage?class=${encodeURIComponent(data.class)}`, token)
+          .then((r) => setCanManageStudents(!!r.allowed))
+          .catch(() => setCanManageStudents(false));
+      } else {
+        setCanManageStudents(false);
+      }
+      if (["administrator", "headmaster", "super_administrator"].includes(user?.role)) {
+        api(`/api/exams/${id}/audit-log`, token).then(setAuditLog).catch(() => {});
+      }
+      api(`/api/exams/${id}/versions`, token).then(setVersions).catch(() => {});
+      api(`/api/exams/${id}/report-cards`, token).then(setReportCards).catch(() => setReportCards([]));
+      api(`/api/exams/${id}/pending-correction`, token).then(setPendingCorrection).catch(() => setPendingCorrection(null));
+    } catch (e) { showToast(e.message, "error"); }
+    setLoading(false);
+  }, [token, user]);
+
+  useEffect(() => { if (token) loadExams(); }, [token, loadExams]);
+  useEffect(() => { if (selectedId) loadExamDetail(selectedId); }, [selectedId, loadExamDetail]);
+  useEffect(() => {
+    if (token && ["administrator", "super_administrator", "headmaster"].includes(user?.role)) loadPendingStudents();
+  }, [token, user]);
+
+  async function loadPendingStudents() {
+    try { setPendingStudents(await api("/api/students/pending", token)); } catch (e) { /* non-fatal */ }
+  }
+
+  async function approveStudent(id) {
+    try {
+      await api(`/api/students/${id}/approve`, token, { method: "POST" });
+      showToast("Student approved.", "success");
+      await loadPendingStudents();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function rejectStudent(id) {
+    if (!rejectReason.trim()) return showToast("Enter a reason for rejecting.", "error");
+    try {
+      await api(`/api/students/${id}/reject`, token, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
+      showToast("Student addition rejected.", "success");
+      setRejectingStudentId(null); setRejectReason("");
+      await loadPendingStudents();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function createExam() {
+    if (!selectedAssignment) return showToast("Pick a class and subject.", "error");
+    const [classId, subject] = selectedAssignment.split("|||");
+    try {
+      const created = await api("/api/exams", token, { method: "POST", body: JSON.stringify({ classId, subject }) });
+      showToast("Exam created.", "success");
+      setSelectedAssignment("");
+      await loadExams(); setSelectedId(created.id);
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  const loadTeacherSetupData = useCallback(async () => {
+    if (!token) return;
+    try {
+      setCurrentTerm(await api("/api/exams/settings/term", token));
+      if (user?.role === "teacher") setMyAssignments(await api("/api/exams/my-assignments", token));
+    } catch (e) { /* non-fatal */ }
+  }, [token, user]);
+
+  useEffect(() => { loadTeacherSetupData(); }, [loadTeacherSetupData]);
+  useEffect(() => { if (currentTerm) setTermForm({ term: currentTerm.term, academicYear: String(currentTerm.academic_year) }); }, [currentTerm]);
+
+  // ---------------------------------------------------------------
+  // Accounts (PTA Dues)
+  // ---------------------------------------------------------------
+
+  // A teacher's own collector status decides whether they even see the
+  // "Accounts" menu at all — checked once on login, same as myAssignments.
+  useEffect(() => {
+    if (token && user?.role === "teacher") {
+      api("/api/pta/my-status", token).then(setPtaMyStatus).catch(() => {});
+    }
+  }, [token, user]);
+
+  // Admin/Headmaster always see a small badge for how many payments are
+  // waiting on them, even before they open the Accounts tab.
+  useEffect(() => {
+    if (token && ["administrator", "super_administrator", "headmaster"].includes(user?.role)) {
+      api("/api/pta/payments", token).then(setPtaQueue).catch(() => {});
+    }
+  }, [token, user]);
+
+  async function loadAccountsData() {
+    try {
+      if (user.role === "teacher") {
+        const [payments, allStudents] = await Promise.all([
+          api("/api/pta/payments/mine", token),
+          api("/api/students", token),
+        ]);
+        setPtaMyPayments(payments);
+        const scopedClassNames = ptaMyStatus.scopes.map((s) => s.class_name).filter(Boolean);
+        setPtaStudents(scopedClassNames.length ? allStudents.filter((s) => scopedClassNames.includes(s.class)) : allStudents);
+      } else {
+        const [collectors, queue, teachers] = await Promise.all([
+          api("/api/pta/collectors", token),
+          api("/api/pta/payments", token),
+          user.role === "administrator" ? api("/api/admin/users", token) : Promise.resolve([]),
+        ]);
+        setPtaCollectors(collectors);
+        setPtaQueue(queue);
+        if (teachers.length) setStaffList(teachers);
+        if (!classList.length && user.role === "administrator") setClassList(await api("/api/admin/classes", token));
+      }
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  useEffect(() => { if (token && view === "accounts") loadAccountsData(); }, [token, view]);
+
+  async function recordPtaPayment() {
+    if (!ptaNewPayment.studentId || !ptaNewPayment.amount) return showToast("Select a student and enter an amount.", "error");
+    setPtaSubmitting(true);
+    try {
+      await api("/api/pta/payments", token, { method: "POST", body: JSON.stringify({ studentId: ptaNewPayment.studentId, amount: Number(ptaNewPayment.amount) }) });
+      showToast("Payment recorded and submitted for Admin review.", "success");
+      setPtaNewPayment({ studentId: "", amount: "" });
+      await loadAccountsData();
+    } catch (e) { showToast(e.message, "error"); } finally { setPtaSubmitting(false); }
+  }
+
+  async function assignPtaCollector() {
+    if (!ptaNewCollector.teacherId) return showToast("Select a teacher.", "error");
+    try {
+      await api("/api/pta/collectors", token, { method: "POST", body: JSON.stringify({ teacherId: ptaNewCollector.teacherId, classId: ptaNewCollector.classId || null }) });
+      showToast("Collector assigned.", "success");
+      setPtaNewCollector({ teacherId: "", classId: "" });
+      await loadAccountsData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function revokePtaCollector(id) {
+    try {
+      await api(`/api/pta/collectors/${id}`, token, { method: "DELETE" });
+      showToast("Collector permission revoked.", "success");
+      await loadAccountsData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function forwardPtaPayment(id) {
+    try {
+      await api(`/api/pta/payments/${id}/forward`, token, { method: "POST" });
+      showToast("Forwarded to Headmaster.", "success");
+      await loadAccountsData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function validatePtaPayment(id) {
+    try {
+      const result = await api(`/api/pta/payments/${id}/validate`, token, { method: "POST" });
+      showToast(result.isFinalPayment ? "Validated — term fully paid. SMS sent." : `Validated. Balance GHS ${result.balance} remaining. SMS sent.`, "success");
+      await loadAccountsData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function rejectPtaPayment(id, isHeadmaster) {
+    if (!ptaRejectReason.trim()) return showToast("Enter a reason for rejecting.", "error");
+    try {
+      await api(`/api/pta/payments/${id}/${isHeadmaster ? "hm-reject" : "reject"}`, token, { method: "POST", body: JSON.stringify({ reason: ptaRejectReason }) });
+      showToast("Payment returned.", "success");
+      setPtaRejectingId(null); setPtaRejectReason("");
+      await loadAccountsData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function addStudent() {
+    if (!newStudent.fullName || !newStudent.admissionNo) return showToast("Enter name and admission number.", "error");
+    try {
+      await api("/api/students", token, { method: "POST", body: JSON.stringify({ ...newStudent, class: exam.class }) });
+      setNewStudent({ fullName: "", admissionNo: "", parentPhone: "", sex: "" });
+      showToast("Student submitted — pending Headmaster approval.", "success");
+      if (["administrator", "super_administrator", "headmaster"].includes(user.role)) loadPendingStudents();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  // New assessment model: Class Work = Individual Test + Group Work +
+  // Class Test + Project (each 0-15, raw total out of 60) scaled to 50.
+  // Exam is entered raw out of 100 and scaled to 50. Total is out of 100.
+  // Kept in sync with the same rounding the backend applies.
+  function computeScaledMarks(m) {
+    const it = Number(m.individual_test || 0);
+    const gw = Number(m.group_work || 0);
+    const ct = Number(m.class_test || 0);
+    const pr = Number(m.project || 0);
+    const er = Number(m.exam_raw || 0);
+    const classworkRaw = it + gw + ct + pr;
+    const classScore = Math.round((classworkRaw * 50 / 60) * 100) / 100;
+    const examScore = Math.round((er * 50 / 100) * 100) / 100;
+    const total = Math.round((classScore + examScore) * 100) / 100;
+    return { classworkRaw, classScore, examScore, total };
+  }
+
+  function startMarksEdit() {
+    const existing = new Map(exam.marks.map((m) => [m.student_id, m]));
+    setMarksEdit(students.map((s) => {
+      const record = existing.get(s.id);
+      return {
+        student_id: s.id,
+        name: s.full_name,
+        individual_test: record?.individual_test ?? "",
+        group_work: record?.group_work ?? "",
+        class_test: record?.class_test ?? "",
+        project: record?.project ?? "",
+        exam_raw: record?.exam_raw ?? ""
+      };
+    }));
+  }
+  function startCorrection() { startMarksEdit(); setCorrectionMode(true); }
+
+  async function decideCorrection(approve, reasonText) {
+    const path = user.role === "administrator" ? "admin-decision" : "headmaster-decision";
+    try {
+      await api(`/api/exams/corrections/${pendingCorrection.id}/${path}`, token, {
+        method: "POST", body: JSON.stringify({ approve, reason: reasonText || undefined }),
+      });
+      showToast(approve ? "Correction approved." : "Correction rejected.", "success");
+      await loadExamDetail(exam.id);
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  // Handle Input Changes without auto-clamping (allowing prompt for correction if > 50)
+  function handleScoreChange(index, field, value) {
+    if (!marksEdit) return;
+    const updated = [...marksEdit];
+    updated[index] = { ...updated[index], [field]: value };
+    setMarksEdit(updated);
+  }
+
+  async function saveMarks() {
+    // Individual Test, Group Work, Class Test, Project: 0-15 each. Exam: 0-100.
+    const invalid = marksEdit.some((m) => {
+      const componentFields = ["individual_test", "group_work", "class_test", "project"];
+      for (const f of componentFields) {
+        const v = Number(m[f]);
+        if (m[f] !== "" && (v < 0 || v > 15)) return true;
+      }
+      const er = Number(m.exam_raw);
+      if (m.exam_raw !== "" && (er < 0 || er > 100)) return true;
+      return false;
+    });
+    if (invalid) {
+      showToast("Individual Test, Group Work, Class Test, and Project must each be between 0 and 15. Exam must be between 0 and 100.", "error");
+      return;
+    }
+
+    const marks = marksEdit
+      .filter((m) => ["individual_test", "group_work", "class_test", "project", "exam_raw"].some((f) => m[f] !== ""))
+      .map((m) => {
+        const individualTest = Number(m.individual_test || 0);
+        const groupWork = Number(m.group_work || 0);
+        const classTest = Number(m.class_test || 0);
+        const project = Number(m.project || 0);
+        const examRaw = Number(m.exam_raw || 0);
+        const { classScore, examScore, total } = computeScaledMarks(m);
+        return {
+          student_id: m.student_id,
+          individual_test: individualTest,
+          group_work: groupWork,
+          class_test: classTest,
+          project: project,
+          exam_raw: examRaw,
+          class_score: classScore,
+          exam_score: examScore,
+          score: total,
+          total: total,
+          total_score: total
+        };
+      });
+
+    if (correctionMode) {
+      setModal("file_correction");
+      return;
+    }
+
+    try {
+      await api(`/api/exams/${exam.id}/marks`, token, {
+        method: "PUT",
+        body: JSON.stringify({ marks })
+      });
+      showToast("Marks saved successfully.", "success");
+      await loadExamDetail(exam.id);
+    } catch (e) {
+      showToast(e.message, "error");
+    }
+  }
+
+  const [uploadResult, setUploadResult] = useState(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function uploadStudentsFile(fileInput) {
+    const file = fileInput.files[0];
+    if (!file) return;
+    setUploading(true); setUploadResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("class", exam.class);
+      const res = await fetch(`${API_BASE}/api/students/bulk-upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Upload failed.");
+      setUploadResult(json);
+      showToast(`${json.added.length} student(s) submitted — pending Headmaster approval.`, "success");
+    } catch (e) { showToast(e.message, "error"); }
+    setUploading(false);
+    fileInput.value = "";
+  }
+
+  const [marksUploadResult, setMarksUploadResult] = useState(null);
+  const [marksUploading, setMarksUploading] = useState(false);
+
+  async function uploadMarksFile(fileInput) {
+    const file = fileInput.files[0];
+    if (!file) return;
+    setMarksUploading(true); setMarksUploadResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`${API_BASE}/api/exams/${exam.id}/marks/bulk-upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Upload failed.");
+      setMarksUploadResult(json);
+      showToast(`${json.updated.length} mark(s) updated.`, "success");
+      await loadExamDetail(exam.id);
+    } catch (e) { showToast(e.message, "error"); }
+    setMarksUploading(false);
+    fileInput.value = "";
+  }
+
+  async function act(path, method = "POST", body) {
+    try {
+      await api(`/api/exams/${exam.id}${path}`, token, { method, body: body ? JSON.stringify(body) : undefined });
+      showToast("Done.", "success");
+      await Promise.all([loadExamDetail(exam.id), loadExams()]);
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  function openReasonModal(type) { setReason(""); setModal(type); }
+  async function confirmModal() {
+    if (!reason.trim()) return showToast("A reason is required.", "error");
+    if (modal === "admin_return") await act("/admin-return", "POST", { reason });
+    if (modal === "hm_return") await act("/hm-return", "POST", { reason });
+    if (modal === "reject_correction") await decideCorrection(false, reason);
+    if (modal === "emergency_unlock") {
+      try {
+        await api(`/api/super-admin/exams/${exam.id}/emergency-unlock`, token, { method: "POST", body: JSON.stringify({ reason }) });
+        showToast("Exam unlocked.", "success");
+        await Promise.all([loadExamDetail(exam.id), loadExams()]);
+      } catch (e) { showToast(e.message, "error"); }
+    }
+    if (modal === "file_correction") {
+      const marks = marksEdit
+        .filter((m) => ["individual_test", "group_work", "class_test", "project", "exam_raw"].some((f) => m[f] !== ""))
+        .map((m) => {
+          const individualTest = Number(m.individual_test || 0);
+          const groupWork = Number(m.group_work || 0);
+          const classTest = Number(m.class_test || 0);
+          const project = Number(m.project || 0);
+          const examRaw = Number(m.exam_raw || 0);
+          const { classScore, examScore, total } = computeScaledMarks(m);
+          return {
+            student_id: m.student_id,
+            individual_test: individualTest,
+            group_work: groupWork,
+            class_test: classTest,
+            project: project,
+            exam_raw: examRaw,
+            class_score: classScore,
+            exam_score: examScore,
+            score: total,
+            total: total,
+            total_score: total
+          };
+        });
+      try {
+        await api(`/api/exams/${exam.id}/correction-request`, token, {
+          method: "POST",
+          body: JSON.stringify({ marks, reason })
+        });
+        showToast("Correction request submitted for review.", "success");
+        setCorrectionMode(false);
+        setMarksEdit(null);
+        await loadExamDetail(exam.id);
+      } catch (e) {
+        showToast(e.message, "error");
+      }
+    }
+    setModal(null);
+    setReason("");
+  }
+
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-stone-900 text-stone-100 flex items-center justify-center p-4">
+        <div className="bg-stone-800 border border-stone-700 rounded-2xl p-8 w-full max-w-md shadow-2xl">
+          <div className="text-center mb-6">
+            <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-20 h-20 mx-auto object-contain drop-shadow-md" />
+            <h1 className="font-serif text-2xl font-bold mt-3">Aduana Model JHS</h1>
+            <p className="text-xs text-stone-400 mt-1">Results Workflow & Assessment Portal</p>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Email Address</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="name@aduanamodel.edu.gh" className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold" />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Password</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="••••••••" className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold" />
+            </div>
+            {loginError && <div className="text-rose-400 text-xs bg-rose-950/50 border border-rose-900 p-2.5 rounded-lg">{loginError}</div>}
+            <button onClick={signIn} disabled={loggingIn} className="w-full bg-gold hover:bg-gold-light text-violet-950 font-semibold py-2.5 rounded-lg transition text-sm disabled:opacity-50">
+              {loggingIn ? "Signing in…" : "Sign In"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (user?.role === "parent") return <ParentDashboard user={user} token={token} onSignOut={signOut} />;
+  if (user?.role === "student") return <StudentDashboard user={user} token={token} onSignOut={signOut} />;
+
+  return (
+    <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col">
+      <div className="bg-violet-950 text-violet-50 px-3 sm:px-4 py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-md">
+        <div className="flex items-center justify-between sm:justify-start gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-8 h-8 sm:w-9 sm:h-9 object-contain" />
+            <div>
+              <div className="font-serif text-base sm:text-lg leading-tight">Aduana Model JHS</div>
+              <div className="text-[11px] text-violet-300 -mt-0.5 hidden sm:block">Results Workflow & Assessment Portal</div>
+            </div>
+          </div>
+          <div className="text-right sm:hidden">
+            <div className="font-medium text-violet-100 text-xs">{user.name}</div>
+            <div className="text-[10px] text-violet-300 uppercase tracking-wider">{user.role.replace("_", " ")}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 sm:gap-4 text-sm overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+          <div className="text-right hidden sm:block flex-shrink-0">
+            <div className="font-medium text-violet-100">{user.name}</div>
+            <div className="text-[11px] text-violet-300 uppercase tracking-wider">{user.role.replace("_", " ")}</div>
+          </div>
+          {(["administrator", "super_administrator", "headmaster"].includes(user.role) || (user.role === "teacher" && ptaMyStatus.isCollector)) && (
+            <div className="flex bg-violet-900/80 rounded-lg p-0.5 border border-violet-800 flex-shrink-0">
+              <button onClick={() => setView("exams")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "exams" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Exams</button>
+              {["administrator", "super_administrator"].includes(user.role) && (
+                <button onClick={() => setView("admin")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "admin" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Admin Panel</button>
+              )}
+              {["administrator", "super_administrator", "headmaster"].includes(user.role) && (
+                <button onClick={() => setView("student_approvals")} className={`px-3 py-1 rounded-md text-xs font-medium transition inline-flex items-center gap-1.5 whitespace-nowrap ${view === "student_approvals" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>
+                  Student Approvals
+                  {pendingStudents.length > 0 && <span className="bg-rose-600 text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{pendingStudents.length}</span>}
+                </button>
+              )}
+              <button onClick={() => setView("accounts")} className={`px-3 py-1 rounded-md text-xs font-medium transition inline-flex items-center gap-1.5 whitespace-nowrap ${view === "accounts" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>
+                Accounts
+                {ptaQueue.length > 0 && ["administrator", "super_administrator", "headmaster"].includes(user.role) && <span className="bg-rose-600 text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{ptaQueue.length}</span>}
+              </button>
+              {["administrator", "super_administrator", "headmaster"].includes(user.role) && (
+                <button onClick={() => setView("reports")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "reports" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Dashboard</button>
+              )}
+            </div>
+          )}
+          <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white text-xs whitespace-nowrap flex-shrink-0">Password</button>
+          <button onClick={signOut} className="text-violet-300 hover:text-white text-xs whitespace-nowrap flex-shrink-0">Sign out</button>
+        </div>
+      </div>
+
+      {showChangePw && <ChangePasswordModal token={token} onClose={() => setShowChangePw(false)} showToastFn={showToast} />}
+      {showStudentsModal && <StudentsBreakdownModal token={token} onClose={() => setShowStudentsModal(false)} />}
+      {toast && <div className={`fixed bottom-4 right-4 px-4 py-2.5 rounded-lg shadow-lg text-sm text-white z-50 ${toast.kind === "error" ? "bg-rose-700" : toast.kind === "success" ? "bg-emerald-700" : "bg-stone-800"}`}>{toast.msg}</div>}
+
+      {/* ADMIN PANEL VIEW */}
+      {view === "admin" && ["administrator", "super_administrator"].includes(user.role) ? (
+        <div className="max-w-6xl mx-auto p-4 md:p-6 w-full space-y-6">
+          <h1 className="font-serif text-2xl">Administration Panel</h1>
+
+          <div className="flex flex-wrap gap-1 border-b border-stone-200">
+            {[
+              { key: "term", label: "Term Settings" },
+              { key: "staff", label: "Staff" },
+              { key: "classes", label: "Classes & Subjects" },
+              { key: "parents", label: "Parents & Student Logins" },
+            ].map((t) => (
+              <button key={t.key} onClick={() => setAdminTab(t.key)}
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${adminTab === t.key ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {adminTab === "term" && (
+          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+            <h2 className="font-serif text-lg mb-3">Current Academic Term Settings</h2>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs text-stone-500 mb-1">Term</label>
+                <select value={termForm.term} onChange={(e) => setTermForm({ ...termForm, term: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                  <option value="Term 1">Term 1</option>
+                  <option value="Term 2">Term 2</option>
+                  <option value="Term 3">Term 3</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-stone-500 mb-1">Academic Year</label>
+                <input type="number" value={termForm.academicYear} onChange={(e) => setTermForm({ ...termForm, academicYear: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm w-32" />
+              </div>
+              <Btn kind="primary" onClick={updateTermSettings}>Update Term</Btn>
+            </div>
+          </div>
+          )}
+
+          {adminTab === "staff" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Create Staff Account</h2>
+              <div className="space-y-3">
+                <input type="text" placeholder="Full Name" value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="email" placeholder="Email Address" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="password" placeholder="Password (min 8 chars)" value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <div>
+                  <label className="block text-xs text-stone-500 mb-1">Role</label>
+                  <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="teacher">Teacher</option>
+                    <option value="administrator">Administrator</option>
+                    <option value="headmaster">Headmaster</option>
+                  </select>
+                </div>
+                <Btn kind="primary" onClick={createStaff}>Create Staff</Btn>
+              </div>
+            </div>
+
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm flex flex-col">
+              <h2 className="font-serif text-lg mb-3">Staff Directory</h2>
+              <div className="overflow-y-auto max-h-72 space-y-2 flex-1">
+                {staffList.map((s) => (
+                  <div key={s.id} className="border border-stone-100 rounded-lg p-3 flex items-center justify-between bg-stone-50/50">
+                    <div>
+                      <div className="font-medium text-sm">{s.name} {!s.is_active && <span className="text-xs text-rose-600">(Deactivated)</span>}</div>
+                      <div className="text-xs text-stone-500">{s.email} · <span className="uppercase">{s.role}</span></div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {resetPwFor === s.id ? (
+                        <div className="flex items-center gap-1">
+                          <input type="password" placeholder="New password" value={resetPwValue} onChange={(e) => setResetPwValue(e.target.value)} className="border rounded px-2 py-1 text-xs w-28" />
+                          <Btn kind="primary" onClick={() => resetAccountPassword(s.id)}>Save</Btn>
+                          <Btn onClick={() => { setResetPwFor(null); setResetPwValue(""); }}>Cancel</Btn>
+                        </div>
+                      ) : (
+                        <>
+                          <button onClick={() => setResetPwFor(s.id)} className="text-xs text-violet-700 hover:underline mr-2">Reset Pw</button>
+                          {s.is_active && <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-700 hover:underline mr-2">Deactivate</button>}
+                          <button onClick={() => deleteStaffAccount(s.id, s.name)} className="text-xs text-rose-700 hover:underline font-semibold">Delete</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          )}
+
+          {adminTab === "classes" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Create Class</h2>
+              <div className="space-y-3">
+                <input type="text" placeholder="Class Name (e.g. JHS 1A)" value={newClass.name} onChange={(e) => setNewClass({ ...newClass, name: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="number" placeholder="Academic Year" value={newClass.academicYear} onChange={(e) => setNewClass({ ...newClass, academicYear: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <Btn kind="primary" onClick={createClass}>Create Class</Btn>
+              </div>
+            </div>
+
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Class Management & Assignments</h2>
+              <div className="overflow-y-auto max-h-72 space-y-4">
+                {classList.map((c) => (
+                  <div key={c.id} className="border border-stone-200 rounded-lg p-3">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <div className="font-medium text-sm">{c.name} ({c.academic_year})</div>
+                      <button onClick={() => deleteClass(c.id, c.name)} className="text-xs text-rose-700 hover:underline whitespace-nowrap">Delete Class</button>
+                    </div>
+                    <div className="text-xs text-stone-500 mb-2">Form Master: {staffList.find((s) => s.id === c.form_master_id)?.name || "None assigned"}</div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <select onChange={(e) => setFormMaster(c.id, e.target.value)} defaultValue="" className="border rounded px-2 py-1 text-xs bg-white">
+                        <option value="" disabled>Set form master…</option>
+                        {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="text-xs font-medium text-stone-700 mb-1">Subject Teachers:</div>
+                    <div className="space-y-1 mb-2">
+                      {c.subjects?.map((sub, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs bg-stone-50 px-2 py-1 rounded">
+                          <span>{sub.subject}: {staffList.find((s) => s.id === sub.teacher_id)?.name || "Unknown"}</span>
+                          <button onClick={() => removeSubjectAssignment(c.id, sub.subject)} className="text-rose-600 hover:underline">Remove</button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <select value={assignSubject[c.id]?.subject || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], subject: e.target.value } })} className="border rounded px-2 py-1 text-xs bg-white flex-1">
+                        <option value="" disabled>Select subject…</option>
+                        {SUBJECTS.filter((subj) => !c.subjects?.some((sub) => sub.subject === subj)).map((subj) => <option key={subj} value={subj}>{subj}</option>)}
+                      </select>
+                      <select value={assignSubject[c.id]?.teacherId || ""} onChange={(e) => setAssignSubject({ ...assignSubject, [c.id]: { ...assignSubject[c.id], teacherId: e.target.value } })} className="border rounded px-2 py-1 text-xs bg-white flex-1">
+                        <option value="" disabled>Select teacher…</option>
+                        {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                      <Btn kind="primary" onClick={() => assignSubjectTeacher(c.id)}>Assign</Btn>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          )}
+
+          {adminTab === "parents" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Create Parent Account</h2>
+              <div className="space-y-3">
+                <input type="text" placeholder="Parent Full Name" value={newParent.name} onChange={(e) => setNewParent({ ...newParent, name: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="email" placeholder="Parent Email Address" value={newParent.email} onChange={(e) => setNewParent({ ...newParent, email: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="password" placeholder="Password (min 8 chars)" value={newParent.password} onChange={(e) => setNewParent({ ...newParent, password: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="text" placeholder="Linked Admission Nos. (comma-separated, e.g. ADU/2026/001, ADU/2026/002)" value={newParent.admissionNos} onChange={(e) => setNewParent({ ...newParent, admissionNos: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <Btn kind="primary" onClick={createParent}>Create Parent Account</Btn>
+              </div>
+            </div>
+
+            <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm flex flex-col">
+              <h2 className="font-serif text-lg mb-3">Student Portal Logins</h2>
+              <div className="overflow-y-auto max-h-80 space-y-2 flex-1">
+                {allStudents.map((st) => (
+                  <div key={st.id} className="border border-stone-100 rounded-lg p-3 bg-stone-50/50">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="font-medium text-sm">{st.full_name} <span className="text-xs text-stone-500">({st.class} · {st.admission_no})</span></div>
+                      {st.has_login ? (
+                        <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">Login Active</span>
+                      ) : (
+                        <button onClick={() => setShowCredentialFor(showCredentialFor === st.id ? null : st.id)} className="text-xs text-violet-700 hover:underline font-medium">Issue Login</button>
+                      )}
+                    </div>
+                    {showCredentialFor === st.id && (
+                      <div className="mt-2 pt-2 border-t border-stone-200 flex items-center gap-2">
+                        <input type="email" placeholder="Student email" value={credentialForm[st.id]?.email || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [st.id]: { ...credentialForm[st.id], email: e.target.value } })} className="border rounded px-2 py-1 text-xs flex-1" />
+                        <input type="password" placeholder="Password" value={credentialForm[st.id]?.password || ""} onChange={(e) => setCredentialForm({ ...credentialForm, [st.id]: { ...credentialForm[st.id], password: e.target.value } })} className="border rounded px-2 py-1 text-xs flex-1" />
+                        <Btn kind="primary" onClick={() => issueCredentials(st.id)}>Save</Btn>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          )}
+        </div>
+      ) : view === "student_approvals" && ["administrator", "super_administrator", "headmaster"].includes(user.role) ? (
+        /* STUDENT APPROVALS VIEW */
+        <div className="max-w-4xl mx-auto p-4 md:p-6 w-full space-y-4">
+          <div>
+            <h1 className="font-serif text-2xl">Student Approvals</h1>
+            <p className="text-sm text-stone-500 mt-1">Students added by a Form Master or Administrator wait here until the Headmaster validates them. They won't appear for marks entry until approved.</p>
+          </div>
+
+          {pendingStudents.length === 0 ? (
+            <div className="bg-white border border-stone-200 rounded-xl p-10 text-center text-stone-400 text-sm">No students awaiting approval right now.</div>
+          ) : (
+            <div className="space-y-3">
+              {pendingStudents.map((s) => (
+                <div key={s.id} className="bg-white border border-stone-200 rounded-xl p-4">
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div>
+                      <div className="font-medium">{s.full_name}</div>
+                      <div className="text-xs text-stone-500 mt-0.5">{s.class} · Admission No. {s.admission_no} · Added by {s.added_by_name || "Unknown"}</div>
+                    </div>
+                    {user.role === "headmaster" ? (
+                      rejectingStudentId === s.id ? (
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <input type="text" placeholder="Reason for rejecting…" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} className="border border-stone-300 rounded-lg px-3 py-1.5 text-xs flex-1 min-w-0" />
+                          <Btn kind="danger" onClick={() => rejectStudent(s.id)}>Confirm</Btn>
+                          <Btn onClick={() => { setRejectingStudentId(null); setRejectReason(""); }}>Cancel</Btn>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Btn kind="success" onClick={() => approveStudent(s.id)}>Approve</Btn>
+                          <Btn kind="danger" onClick={() => setRejectingStudentId(s.id)}>Reject</Btn>
+                        </div>
+                      )
+                    ) : (
+                      <span className="text-xs bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full font-medium whitespace-nowrap">Awaiting Headmaster</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : view === "accounts" ? (
+        /* ACCOUNTS VIEW — PTA Dues */
+        <div className="max-w-5xl mx-auto p-4 md:p-6 w-full space-y-6">
+          <div>
+            <h1 className="font-serif text-2xl">Accounts — P.T.A. Dues</h1>
+            <p className="text-sm text-stone-500 mt-1">GHS 30 per term · GHS 90 total for the year. Teacher collects → Admin forwards → Headmaster validates → SMS sent to parent.</p>
+          </div>
+
+          {/* TEACHER (COLLECTOR) PANEL */}
+          {user.role === "teacher" && (
+            <div className="space-y-6">
+              <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                <h2 className="font-serif text-lg mb-3">Record a Payment</h2>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select value={ptaNewPayment.studentId} onChange={(e) => setPtaNewPayment({ ...ptaNewPayment, studentId: e.target.value })} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="" disabled>Select student…</option>
+                    {ptaStudents.map((s) => (
+                      <option key={s.id} value={s.id}>{s.full_name} — {s.class} ({s.admission_no})</option>
+                    ))}
+                  </select>
+                  <input type="number" min="1" max="30" placeholder="Amount (GHS)" value={ptaNewPayment.amount} onChange={(e) => setPtaNewPayment({ ...ptaNewPayment, amount: e.target.value })} className="w-full sm:w-40 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white" />
+                  <Btn kind="primary" onClick={recordPtaPayment} disabled={ptaSubmitting}>Submit</Btn>
+                </div>
+                <p className="text-xs text-stone-500 mt-2">Submitting sends this to the Administrator for review, then the Headmaster for final validation. The parent gets an SMS only once the Headmaster validates it.</p>
+              </div>
+
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+                <h2 className="font-serif text-lg p-4 pb-0">My Submissions</h2>
+                <div className="overflow-x-auto p-4">
+                  <table className="w-full text-left border-collapse text-sm" style={{ minWidth: "600px" }}>
+                    <thead>
+                      <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500">
+                        <th className="py-2 pr-4">Student</th>
+                        <th className="py-2 pr-4">Term</th>
+                        <th className="py-2 pr-4">Amount</th>
+                        <th className="py-2 pr-4">Status</th>
+                        <th className="py-2 pr-4">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {ptaMyPayments.length === 0 ? (
+                        <tr><td colSpan="5" className="py-6 text-center text-stone-400">No payments submitted yet.</td></tr>
+                      ) : ptaMyPayments.map((p) => (
+                        <tr key={p.id}>
+                          <td className="py-2 pr-4 font-medium">{p.student_name}</td>
+                          <td className="py-2 pr-4">{p.term} {p.academic_year}</td>
+                          <td className="py-2 pr-4">GHS {Number(p.amount).toFixed(2)}</td>
+                          <td className="py-2 pr-4"><PtaStatusBadge status={p.status} /></td>
+                          <td className="py-2 pr-4 text-stone-500 text-xs">{fmt(p.created_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ADMIN: ASSIGN COLLECTORS */}
+          {["administrator", "super_administrator"].includes(user.role) && (
+            <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Assign Collectors</h2>
+              <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                <select value={ptaNewCollector.teacherId} onChange={(e) => setPtaNewCollector({ ...ptaNewCollector, teacherId: e.target.value })} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                  <option value="" disabled>Select teacher…</option>
+                  {staffList.filter((s) => s.role === "teacher").map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <select value={ptaNewCollector.classId} onChange={(e) => setPtaNewCollector({ ...ptaNewCollector, classId: e.target.value })} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                  <option value="">All classes</option>
+                  {classList.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <Btn kind="primary" onClick={assignPtaCollector}>Assign</Btn>
+              </div>
+              <div className="space-y-2">
+                {ptaCollectors.filter((c) => c.active).length === 0 ? (
+                  <div className="text-stone-400 text-sm">No collectors assigned yet.</div>
+                ) : ptaCollectors.filter((c) => c.active).map((c) => (
+                  <div key={c.id} className="flex items-center justify-between gap-3 border border-stone-200 rounded-lg px-3 py-2 text-sm">
+                    <div>
+                      <span className="font-medium">{c.teacher_name}</span>
+                      <span className="text-stone-500"> — {c.class_name || "All classes"}</span>
+                    </div>
+                    <Btn kind="danger" onClick={() => revokePtaCollector(c.id)}>Revoke</Btn>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ADMIN / HEADMASTER: REVIEW QUEUE */}
+          {["administrator", "super_administrator", "headmaster"].includes(user.role) && (
+            <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+              <h2 className="font-serif text-lg p-4 pb-0">
+                {user.role === "headmaster" ? "Awaiting Your Validation" : "Awaiting Your Review"}
+              </h2>
+              <div className="p-4 space-y-3">
+                {ptaQueue.length === 0 ? (
+                  <div className="text-stone-400 text-sm text-center py-6">Nothing pending right now.</div>
+                ) : ptaQueue.map((p) => (
+                  <div key={p.id} className="border border-stone-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div>
+                        <div className="font-medium text-sm">{p.student_name} <span className="text-stone-400 font-normal">— {p.class}</span></div>
+                        <div className="text-xs text-stone-500 mt-0.5">GHS {Number(p.amount).toFixed(2)} · {p.term} {p.academic_year} · Collected by {p.collected_by_name}</div>
+                      </div>
+                      {ptaRejectingId === p.id ? (
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <input type="text" placeholder="Reason for returning…" value={ptaRejectReason} onChange={(e) => setPtaRejectReason(e.target.value)} className="border border-stone-300 rounded-lg px-3 py-1.5 text-xs flex-1 min-w-0" />
+                          <Btn kind="danger" onClick={() => rejectPtaPayment(p.id, user.role === "headmaster")}>Confirm</Btn>
+                          <Btn onClick={() => { setPtaRejectingId(null); setPtaRejectReason(""); }}>Cancel</Btn>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          {user.role === "headmaster" ? (
+                            <Btn kind="success" onClick={() => validatePtaPayment(p.id)}>Validate</Btn>
+                          ) : (
+                            <Btn kind="success" onClick={() => forwardPtaPayment(p.id)}>Forward to Headmaster</Btn>
+                          )}
+                          <Btn kind="danger" onClick={() => setPtaRejectingId(p.id)}>Return</Btn>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : view === "reports" && ["administrator", "super_administrator", "headmaster"].includes(user.role) ? (
+        /* DASHBOARD & REPORTS VIEW */
+        <div className="max-w-6xl mx-auto p-4 md:p-6 w-full space-y-6">
+          <div>
+            <h1 className="font-serif text-2xl">Dashboard</h1>
+            <p className="text-sm text-stone-500 mt-1">A visual snapshot across students, exam results, and P.T.A. dues.</p>
+          </div>
+
+          {dashboardLoading && !dashboardData ? (
+            <div className="text-center text-stone-400 py-12">Loading dashboard…</div>
+          ) : dashboardData ? (
+            <React.Fragment>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div
+                  className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm cursor-pointer hover:border-purple-300 hover:shadow-md transition"
+                  onClick={() => setShowStudentsModal(true)}
+                >
+                  <div className="text-xs text-stone-500 uppercase tracking-wider">Total Students</div>
+                  <div className="text-2xl font-serif mt-1">{dashboardData.studentsByClass.reduce((sum, c) => sum + c.count, 0)}</div>
+                  <div className="text-[11px] text-purple-700 mt-1">Tap to view breakdown →</div>
+                </div>
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <div className="text-xs text-stone-500 uppercase tracking-wider">Exams Published</div>
+                  <div className="text-2xl font-serif mt-1">{dashboardData.examStatusCounts.find((s) => s.status === "published")?.count || 0}</div>
+                </div>
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <div className="text-xs text-stone-500 uppercase tracking-wider">P.T.A. Collected</div>
+                  <div className="text-2xl font-serif mt-1">GHS {(dashboardData.ptaByStatus.find((s) => s.status === "recorded")?.total_amount || 0).toFixed(2)}</div>
+                </div>
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <div className="text-xs text-stone-500 uppercase tracking-wider">P.T.A. Pending</div>
+                  <div className="text-2xl font-serif mt-1">{dashboardData.ptaByStatus.filter((s) => ["pending_admin", "pending_headmaster"].includes(s.status)).reduce((sum, s) => sum + s.count, 0)}</div>
+                </div>
+              </div>
+
+              {/* Charts */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <h2 className="font-serif text-base mb-3">Students by Class</h2>
+                  {dashboardData.studentsByClass.length === 0 ? <div className="text-sm text-stone-400 py-8 text-center">No students yet.</div> : (
+                    <ChartCanvas type="bar" data={{
+                      labels: dashboardData.studentsByClass.map((c) => c.class),
+                      datasets: [{ label: "Students", data: dashboardData.studentsByClass.map((c) => c.count), backgroundColor: dashboardData.studentsByClass.map((_, i) => SERIES_PALETTE[i % SERIES_PALETTE.length]) }],
+                    }} options={{ maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }} />
+                  )}
+                </div>
+
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <h2 className="font-serif text-base mb-3">Exam Status</h2>
+                  {dashboardData.examStatusCounts.length === 0 ? <div className="text-sm text-stone-400 py-8 text-center">No exams yet.</div> : (
+                    <ChartCanvas type="doughnut" data={{
+                      labels: dashboardData.examStatusCounts.map((s) => STATUS_META[s.status]?.label || s.status),
+                      datasets: [{ data: dashboardData.examStatusCounts.map((s) => s.count), backgroundColor: dashboardData.examStatusCounts.map((s) => STATUS_HEX[s.status] || "#a8a29e") }],
+                    }} options={{ maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } } }} />
+                  )}
+                </div>
+
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <h2 className="font-serif text-base mb-3">Subject Averages (Published Exams)</h2>
+                  {dashboardData.subjectAverages.length === 0 ? <div className="text-sm text-stone-400 py-8 text-center">No published results yet.</div> : (
+                    <ChartCanvas type="bar" height={Math.max(240, dashboardData.subjectAverages.length * 32)} data={{
+                      labels: dashboardData.subjectAverages.map((s) => `${s.subject} (${s.class})`),
+                      datasets: [{ label: "Average Score", data: dashboardData.subjectAverages.map((s) => s.avg_score), backgroundColor: dashboardData.subjectAverages.map((_, i) => SERIES_PALETTE[i % SERIES_PALETTE.length]) }],
+                    }} options={{ indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, max: 100 } } }} />
+                  )}
+                </div>
+
+                <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+                  <h2 className="font-serif text-base mb-3">P.T.A. Dues Status</h2>
+                  {dashboardData.ptaByStatus.length === 0 ? <div className="text-sm text-stone-400 py-8 text-center">No P.T.A. payments yet.</div> : (
+                    <React.Fragment>
+                      <ChartCanvas type="doughnut" data={{
+                        labels: dashboardData.ptaByStatus.map((s) => PTA_STATUS_LABELS[s.status] || s.status),
+                        datasets: [{ data: dashboardData.ptaByStatus.map((s) => s.count), backgroundColor: dashboardData.ptaByStatus.map((s) => PTA_STATUS_HEX[s.status] || "#a8a29e") }],
+                      }} options={{ maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } } }} />
+                      <div className="text-xs text-stone-500 mt-2 space-y-0.5">
+                        {dashboardData.ptaByStatus.map((s) => (
+                          <div key={s.status} className="flex justify-between">
+                            <span>{PTA_STATUS_LABELS[s.status] || s.status}</span>
+                            <span className="font-medium text-stone-700">GHS {s.total_amount.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </React.Fragment>
+                  )}
+                </div>
+              </div>
+
+              {/* Printable reports */}
+              <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm no-print">
+                <h2 className="font-serif text-lg mb-1">Print a Report</h2>
+                <p className="text-xs text-stone-500 mb-3">Filter by class, subject, or P.T.A. status, then print or save as PDF from your browser's print dialog.</p>
+
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <div className="flex bg-stone-100 rounded-lg p-0.5">
+                    <button onClick={() => { setReportType("marks"); setReportRun(false); setReportRows([]); }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${reportType === "marks" ? "bg-white shadow-sm text-violet-950" : "text-stone-500"}`}>Marks / Results</button>
+                    <button onClick={() => { setReportType("pta"); setReportRun(false); setReportRows([]); }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${reportType === "pta" ? "bg-white shadow-sm text-violet-950" : "text-stone-500"}`}>P.T.A. Dues</button>
+                    <button onClick={() => { setReportType("terminal"); setReportRun(false); setReportRows([]); }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${reportType === "terminal" ? "bg-white shadow-sm text-violet-950" : "text-stone-500"}`}>Terminal Report</button>
+                  </div>
+                </div>
+
+                {reportType === "terminal" ? (
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <select value={terminalClass} onChange={(e) => { setTerminalClass(e.target.value); setTerminalStudentId(""); setTerminalResult(null); }} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                      <option value="">Select class…</option>
+                      {dashboardData.studentsByClass.map((c) => <option key={c.class} value={c.class}>{c.class}</option>)}
+                    </select>
+                    <select value={terminalStudentId} onChange={(e) => { setTerminalStudentId(e.target.value); setTerminalResult(null); }} disabled={!terminalClass} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white disabled:bg-stone-100">
+                      <option value="">Select student…</option>
+                      {terminalStudents.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                    </select>
+                    <Btn kind="primary" onClick={generateTerminalReport} disabled={terminalGenerating || !terminalStudentId}>{terminalGenerating ? "Generating…" : "Generate Terminal Report"}</Btn>
+                    {terminalResult && (
+                      <Btn kind="secondary" onClick={() => downloadTerminalReportPdf(terminalStudentId, terminalStudents.find((s) => s.id === terminalStudentId)?.full_name || "Student")}>Download PDF</Btn>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <select value={reportFilters.class} onChange={(e) => setReportFilters({ ...reportFilters, class: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                      <option value="">All classes</option>
+                      {dashboardData.studentsByClass.map((c) => <option key={c.class} value={c.class}>{c.class}</option>)}
+                    </select>
+
+                    {reportType === "marks" && (
+                      <select value={reportFilters.subject} onChange={(e) => setReportFilters({ ...reportFilters, subject: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                        <option value="">All subjects</option>
+                        {[...new Set(dashboardData.subjectAverages.map((s) => s.subject))].map((subj) => <option key={subj} value={subj}>{subj}</option>)}
+                      </select>
+                    )}
+
+                    {reportType === "pta" && (
+                      <select value={reportFilters.status} onChange={(e) => setReportFilters({ ...reportFilters, status: e.target.value })} className="border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                        <option value="">All statuses</option>
+                        {Object.entries(PTA_STATUS_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+                      </select>
+                    )}
+
+                    <Btn kind="primary" onClick={runReport} disabled={reportLoading}>{reportLoading ? "Generating…" : "Generate Report"}</Btn>
+                    {reportRun && reportRows.length > 0 && <Btn kind="secondary" onClick={() => window.print()}>Print / Save PDF</Btn>}
+                  </div>
+                )}
+
+                {reportType !== "terminal" && reportRun && !reportLoading && (
+                  <div className="text-sm text-stone-500">{reportRows.length === 0 ? "No matching records found." : `${reportRows.length} record(s) found.`}</div>
+                )}
+                {reportType === "terminal" && terminalResult && (
+                  <div className="text-sm text-stone-500">
+                    {terminalResult.subjectsIncluded} of {SUBJECTS.length} subjects published · Aggregate {terminalResult.aggregateTotal ?? "—"}
+                    {terminalResult.positionInClass ? ` · Position ${terminalResult.positionInClass} of ${terminalResult.classSize}` : ""}
+                  </div>
+                )}
+              </div>
+
+              {/* Printable area — only this shows up when printing */}
+              {reportRun && reportRows.length > 0 && (
+                <div id="printable-report" className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm">
+                  <div className="flex items-center gap-3 mb-4 pb-4 border-b border-stone-200">
+                    <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-12 h-12 object-contain" />
+                    <div>
+                      <div className="font-serif text-lg font-bold">Aduana Model JHS</div>
+                      <div className="text-xs text-stone-500">{reportType === "marks" ? "Results Report" : "P.T.A. Dues Report"}{reportFilters.class ? ` — ${reportFilters.class}` : ""}{reportType === "marks" && reportFilters.subject ? ` — ${reportFilters.subject}` : ""}</div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b border-stone-300 text-xs font-semibold uppercase tracking-wider text-stone-500">
+                          {reportType === "marks" ? (
+                            <React.Fragment>
+                              <th className="py-2 pr-4">Class</th><th className="py-2 pr-4">Subject</th><th className="py-2 pr-4">Student</th><th className="py-2 pr-4">Adm. No.</th><th className="py-2 pr-4">Score</th><th className="py-2 pr-4">Grade</th>
+                            </React.Fragment>
+                          ) : (
+                            <React.Fragment>
+                              <th className="py-2 pr-4">Class</th><th className="py-2 pr-4">Student</th><th className="py-2 pr-4">Adm. No.</th><th className="py-2 pr-4">Term</th><th className="py-2 pr-4">Amount</th><th className="py-2 pr-4">Status</th>
+                            </React.Fragment>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100">
+                        {reportRows.map((r, i) => (
+                          <tr key={i}>
+                            {reportType === "marks" ? (
+                              <React.Fragment>
+                                <td className="py-2 pr-4">{r.class}</td><td className="py-2 pr-4">{r.subject}</td><td className="py-2 pr-4">{r.student_name}</td><td className="py-2 pr-4 font-mono text-xs">{r.admission_no}</td><td className="py-2 pr-4">{r.score}</td><td className="py-2 pr-4">{r.grade || "—"}</td>
+                              </React.Fragment>
+                            ) : (
+                              <React.Fragment>
+                                <td className="py-2 pr-4">{r.class}</td><td className="py-2 pr-4">{r.student_name}</td><td className="py-2 pr-4 font-mono text-xs">{r.admission_no}</td><td className="py-2 pr-4">{r.term} {r.academic_year}</td><td className="py-2 pr-4">GHS {Number(r.amount).toFixed(2)}</td><td className="py-2 pr-4">{PTA_STATUS_LABELS[r.status] || r.status}</td>
+                              </React.Fragment>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-[10px] text-stone-400 mt-4 pt-3 border-t border-stone-100">Generated {new Date().toLocaleString()} · Aduana Model JHS Results Workflow & Assessment Portal</div>
+                </div>
+              )}
+            </React.Fragment>
+          ) : null}
+        </div>
+      ) : (
+        /* EXAMS VIEW */
+        <div className="max-w-6xl mx-auto p-4 md:p-6 w-full flex-1 flex flex-col md:flex-row gap-6">
+          {/* Sidebar */}
+          <div className="w-full md:w-80 flex-shrink-0 space-y-4">
+            <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+              <h2 className="font-serif text-lg mb-3">Exams</h2>
+              {currentTerm && (
+                <div className="text-xs bg-violet-50 text-violet-900 px-3 py-2 rounded-lg mb-3 border border-violet-100">
+                  Current Term: <span className="font-semibold">{currentTerm.term} {currentTerm.academic_year}</span>
+                </div>
+              )}
+
+              {user.role === "teacher" && (
+                <div className="mb-4 pb-4 border-b border-stone-100 space-y-2">
+                  <div className="text-xs font-medium text-stone-700">Create Exam Sheet</div>
+                  <select value={selectedAssignment} onChange={(e) => setSelectedAssignment(e.target.value)} className="w-full border border-stone-300 rounded-lg px-2.5 py-2 text-xs bg-white">
+                    <option value="" disabled>Select assigned class & subject…</option>
+                    {myAssignments.map((a, i) => (
+                      <option key={i} value={`${a.class_id}|||${a.subject}`}>{a.class_name} — {a.subject}</option>
+                    ))}
+                  </select>
+                  <Btn kind="primary" onClick={createExam}>Create Exam Sheet</Btn>
+                </div>
+              )}
+
+              {loading && exams.length === 0 ? (
+                <div className="text-stone-400 text-xs">Loading exams…</div>
+              ) : exams.length === 0 ? (
+                <div className="text-stone-400 text-xs">No exam sheets found.</div>
+              ) : (
+                <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+                  {exams.map((ex) => (
+                    <button key={ex.id} onClick={() => setSelectedId(ex.id)}
+                      className={`w-full text-left p-3 rounded-lg border text-sm transition ${selectedId === ex.id ? "bg-violet-900 text-white border-violet-900 shadow-sm" : "bg-white border-stone-200 hover:border-stone-300 text-stone-800"}`}>
+                      <div className="font-medium truncate">{ex.subject}</div>
+                      <div className={`text-xs flex items-center justify-between mt-1 ${selectedId === ex.id ? "text-violet-200" : "text-stone-500"}`}>
+                        <span>{ex.class}</span>
+                        <span className="scale-90 origin-right"><Badge status={ex.status} /></span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Main Content Area */}
+          <div className="flex-1 min-w-0">
+            {!exam ? (
+              <div className="bg-white border border-stone-200 rounded-xl p-12 text-center text-stone-400 shadow-sm">
+                Select an exam sheet from the sidebar to view and manage marks.
+              </div>
+            ) : (
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+                {/* Header */}
+                <div className="p-5 border-b border-stone-200 bg-stone-50/50 flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h1 className="font-serif text-2xl font-bold">{exam.subject}</h1>
+                      <Badge status={exam.status} />
+                    </div>
+                    <div className="text-sm text-stone-500 mt-0.5">
+                      Class: {exam.class} · Term: {exam.term} {exam.academic_year} · Teacher: {exam.teacher_name}
+                    </div>
+                  </div>
+
+                  {/* Actions Toolbar */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {user.role === "teacher" && exam.status === "draft" && (
+                      <>
+                        <Btn kind="primary" onClick={startMarksEdit}>
+                          {marksEdit ? "Cancel Editing" : "Edit Marks"}
+                        </Btn>
+                        {marksEdit && <Btn kind="success" onClick={saveMarks}>Save Marks</Btn>}
+                        <Btn kind="success" onClick={() => act("/submit")} disabled={!exam.marks || exam.marks.length === 0}>Submit for Review</Btn>
+                      </>
+                    )}
+
+                    {user.role === "teacher" && ["admin_returned", "hm_returned"].includes(exam.status) && (
+                      <>
+                        <Btn kind="primary" onClick={startMarksEdit}>{marksEdit ? "Cancel Editing" : "Revise Marks"}</Btn>
+                        {marksEdit && <Btn kind="success" onClick={saveMarks}>Save Revisions</Btn>}
+                        <Btn kind="success" onClick={() => act("/resubmit")} disabled={!exam.marks || exam.marks.length === 0}>Resubmit</Btn>
+                      </>
+                    )}
+
+                    {user.role === "administrator" && exam.status === "submitted" && (
+                      <>
+                        <Btn kind="success" onClick={() => act("/admin-approve")}>Approve & Send to Headmaster</Btn>
+                        <Btn kind="danger" onClick={() => openReasonModal("admin_return")}>Return to Teacher</Btn>
+                      </>
+                    )}
+
+                    {user.role === "headmaster" && exam.status === "admin_approved" && (
+                      <>
+                        <Btn kind="success" onClick={() => act("/hm-publish")}>Approve & Publish Results</Btn>
+                        <Btn kind="danger" onClick={() => openReasonModal("hm_return")}>Return to Administrator</Btn>
+                      </>
+                    )}
+
+                    {user.role === "teacher" && ["published", "locked"].includes(exam.status) && !correctionMode && !pendingCorrection && (
+                      <Btn kind="primary" onClick={startCorrection}>Request Correction</Btn>
+                    )}
+                    {user.role === "teacher" && correctionMode && (
+                      <>
+                        <Btn kind="primary" onClick={startMarksEdit}>Cancel Correction Edit</Btn>
+                        <Btn kind="success" onClick={saveMarks}>Submit Correction</Btn>
+                      </>
+                    )}
+
+                    {user.role === "administrator" && exam.status === "correction_pending_admin" && pendingCorrection && (
+                      <>
+                        <Btn kind="success" onClick={() => decideCorrection(true)}>Approve Correction</Btn>
+                        <Btn kind="danger" onClick={() => openReasonModal("reject_correction")}>Reject Correction</Btn>
+                      </>
+                    )}
+
+                    {user.role === "headmaster" && exam.status === "correction_pending_hm" && pendingCorrection && (
+                      <>
+                        <Btn kind="success" onClick={() => decideCorrection(true)}>Approve Correction</Btn>
+                        <Btn kind="danger" onClick={() => openReasonModal("reject_correction")}>Reject Correction</Btn>
+                      </>
+                    )}
+
+                    {user.role === "super_administrator" && exam.status === "locked" && (
+                      <Btn kind="danger" onClick={() => openReasonModal("emergency_unlock")}>Emergency Unlock</Btn>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex border-b border-stone-200 px-5 bg-stone-50 text-sm overflow-x-auto">
+                  <button onClick={() => setTab("add_student")} className={`py-3 px-4 font-medium border-b-2 transition whitespace-nowrap ${tab === "add_student" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Add Student</button>
+                  <button onClick={() => setTab("classwork")} className={`py-3 px-4 font-medium border-b-2 transition whitespace-nowrap ${tab === "classwork" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Classwork</button>
+                  <button onClick={() => setTab("examination")} className={`py-3 px-4 font-medium border-b-2 transition whitespace-nowrap ${tab === "examination" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Examination</button>
+                  {["administrator", "headmaster", "super_administrator"].includes(user.role) && (
+                    <button onClick={() => setTab("audit")} className={`py-3 px-4 font-medium border-b-2 transition whitespace-nowrap ${tab === "audit" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Audit Trail</button>
+                  )}
+                  <button onClick={() => setTab("versions")} className={`py-3 px-4 font-medium border-b-2 transition whitespace-nowrap ${tab === "versions" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Version History</button>
+                  {exam.status === "published" && (
+                    <button onClick={() => setTab("report_cards")} className={`py-3 px-4 font-medium border-b-2 transition whitespace-nowrap ${tab === "report_cards" ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>Report Cards</button>
+                  )}
+                </div>
+
+                {/* Tab Content: Add Student */}
+                {tab === "add_student" && (
+                  <div className="p-5 space-y-4">
+                    {exam.return_reason && (
+                      <div className="bg-rose-50 border border-rose-200 text-rose-900 p-4 rounded-xl text-sm">
+                        <span className="font-semibold">Return Reason:</span> {exam.return_reason}
+                      </div>
+                    )}
+                    {canManageStudents && exam.status === "draft" ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 min-w-0">
+                          <div className="font-medium text-sm mb-1 text-stone-700">Add Student</div>
+                          <div className="text-xs text-stone-500 mb-3">New students are sent to the Headmaster for validation before they appear for marks entry.</div>
+                          <div className="flex flex-col gap-2">
+                            <input type="text" placeholder="Full Name" value={newStudent.fullName} onChange={(e) => setNewStudent({ ...newStudent, fullName: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold" />
+                            <select value={newStudent.sex} onChange={(e) => setNewStudent({ ...newStudent, sex: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold">
+                              <option value="">Sex (optional)</option>
+                              <option value="M">Male</option>
+                              <option value="F">Female</option>
+                            </select>
+                            <input type="text" placeholder="Parent Phone (for SMS, e.g. 024xxxxxxx)" value={newStudent.parentPhone} onChange={(e) => setNewStudent({ ...newStudent, parentPhone: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold" />
+                            <div className="flex gap-2">
+                              <input type="text" placeholder="Admission No." value={newStudent.admissionNo} onChange={(e) => setNewStudent({ ...newStudent, admissionNo: e.target.value })} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold" />
+                              <Btn kind="primary" onClick={addStudent}>
+                                <span className="whitespace-nowrap">Add Student</span>
+                              </Btn>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 pt-4 border-t border-stone-200">
+                            <div className="font-medium text-sm mb-2 text-stone-700">Or Bulk Add Students (CSV / Excel)</div>
+                            <button
+                              type="button"
+                              onClick={() => downloadCsvTemplate(
+                                "student_upload_template.csv",
+                                ["Full Name", "Admission No.", "Parent Phone", "Sex"],
+                                ["Ama Serwaa", "ADU/2026/045", "0244123456", "F"]
+                              )}
+                              className="text-xs font-medium text-violet-900 hover:text-violet-700 underline mb-2 inline-block"
+                            >
+                              Download Template
+                            </button>
+                            <label className="flex flex-col sm:flex-row sm:items-center gap-2 cursor-pointer">
+                              <span className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-violet-900 text-white hover:bg-violet-800 transition whitespace-nowrap w-fit">Choose File</span>
+                              <input type="file" accept=".csv,.xlsx" onChange={(e) => uploadStudentsFile(e.target)} disabled={uploading} className="hidden" />
+                              <span className="text-xs text-stone-500 truncate">{uploading ? "Uploading…" : "CSV or Excel file"}</span>
+                            </label>
+                            {uploadResult && (
+                              <div className="text-xs mt-2 space-y-0.5">
+                                {uploadResult.added.length > 0 && <div className="text-emerald-700">{uploadResult.added.length} submitted — pending Headmaster approval.</div>}
+                                {uploadResult.skipped.length > 0 && <div className="text-amber-700">{uploadResult.skipped.length} skipped (duplicate admission no.).</div>}
+                                {uploadResult.errors.length > 0 && <div className="text-rose-700">{uploadResult.errors.length} row(s) had errors.</div>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 min-w-0">
+                          <div className="font-medium text-sm mb-1 text-stone-700">Bulk Upload Marks (CSV / Excel)</div>
+                          <div className="text-xs text-stone-500 mb-3">Columns: Admission No., Individual Test, Group Work, Class Test, Project, Exam.</div>
+                          <button
+                            type="button"
+                            onClick={() => downloadCsvTemplate(
+                              "marks_upload_template.csv",
+                              ["Admission No.", "Individual Test", "Group Work", "Class Test", "Project", "Exam"],
+                              ["ADU/2026/045", "12", "13", "14", "13", "78"]
+                            )}
+                            className="text-xs font-medium text-violet-900 hover:text-violet-700 underline mb-2 inline-block"
+                          >
+                            Download Template
+                          </button>
+                          <label className="flex flex-col sm:flex-row sm:items-center gap-2 cursor-pointer">
+                            <span className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-violet-900 text-white hover:bg-violet-800 transition whitespace-nowrap w-fit">Choose File</span>
+                            <input type="file" accept=".csv,.xlsx" onChange={(e) => uploadMarksFile(e.target)} disabled={marksUploading} className="hidden" />
+                            <span className="text-xs text-stone-500 truncate">{marksUploading ? "Uploading…" : "CSV or Excel file"}</span>
+                          </label>
+                          {marksUploadResult && <div className="text-xs text-emerald-700 mt-2">{marksUploadResult.updated.length} marks updated successfully.</div>}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-stone-400 text-sm">{exam.status !== "draft" ? "Students can only be added while the exam sheet is in draft." : "You don't have permission to add students to this class."}</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Tab Content: Classwork (Continuous Assessment) */}
+                {tab === "classwork" && (
+                  <div className="p-5 space-y-4">
+                    <h3 className="font-serif text-lg mb-1">Continuous Assessment</h3>
+                    <p className="text-xs text-stone-500 mb-2">Individual Test + Group Work + Class Test + Project (out of 60), scaled to 50.</p>
+                    {pendingCorrection && (
+                      <div className="bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-xl text-sm">
+                        <span className="font-semibold">Pending Correction Request:</span> {pendingCorrection.reason}
+                      </div>
+                    )}
+                    <div className="text-[11px] text-stone-400 px-1 sm:hidden">⇠ Swipe to see all columns ⇢</div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse" style={{ minWidth: marksEdit ? "700px" : "560px" }}>
+                        <thead>
+                          {marksEdit ? (
+                            <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500 bg-stone-50">
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "160px" }}>Student Name</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "110px" }}>Admission No.</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Ind. Test (15)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Group Work (15)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Class Test (15)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Project (15)</th>
+                            </tr>
+                          ) : (
+                            <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500 bg-stone-50">
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "180px" }}>Student Name</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "130px" }}>Admission No.</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Class Work (50)</th>
+                            </tr>
+                          )}
+                        </thead>
+                        <tbody className="divide-y divide-stone-100 text-sm">
+                          {marksEdit ? (
+                            marksEdit.map((m, idx) => (
+                              <tr key={m.student_id} className="hover:bg-stone-50/50">
+                                <td className="py-3 px-4 font-medium" style={{ minWidth: "160px" }}>{m.name || "—"}</td>
+                                <td className="py-3 px-4 text-stone-500 text-xs" style={{ minWidth: "110px" }}>{students.find(s => s.id === m.student_id)?.admission_no || "—"}</td>
+                                <td className="py-3 px-4">
+                                  <input type="number" min="0" max="15" value={m.individual_test} onChange={(ev) => handleScoreChange(idx, "individual_test", ev.target.value)} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                </td>
+                                <td className="py-3 px-4">
+                                  <input type="number" min="0" max="15" value={m.group_work} onChange={(ev) => handleScoreChange(idx, "group_work", ev.target.value)} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                </td>
+                                <td className="py-3 px-4">
+                                  <input type="number" min="0" max="15" value={m.class_test} onChange={(ev) => handleScoreChange(idx, "class_test", ev.target.value)} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                </td>
+                                <td className="py-3 px-4">
+                                  <input type="number" min="0" max="15" value={m.project} onChange={(ev) => handleScoreChange(idx, "project", ev.target.value)} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                </td>
+                              </tr>
+                            ))
+                          ) : exam.marks && exam.marks.length > 0 ? (
+                            exam.marks.map((m, idx) => (
+                              <tr key={idx} className="hover:bg-stone-50/50">
+                                <td className="py-3 px-4 font-medium" style={{ minWidth: "180px" }}>{m.student_name || "—"}</td>
+                                <td className="py-3 px-4 text-stone-500 text-xs" style={{ minWidth: "130px" }}>{m.admission_no || "—"}</td>
+                                <td className="py-3 px-4">{m.class_score ?? "—"}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan="3" className="py-8 text-center text-stone-400">No marks entered yet. Click "Edit Marks" to begin.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab Content: Examination */}
+                {tab === "examination" && (
+                  <div className="p-5 space-y-4">
+                    <h3 className="font-serif text-lg mb-1">Examination</h3>
+                    <p className="text-xs text-stone-500 mb-2">Exam score (out of 100), scaled to 50. Grade and Position are assigned once the exam sheet is published.</p>
+                    {pendingCorrection && (
+                      <div className="bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-xl text-sm">
+                        <span className="font-semibold">Pending Correction Request:</span> {pendingCorrection.reason}
+                      </div>
+                    )}
+                    <div className="text-[11px] text-stone-400 px-1 sm:hidden">⇠ Swipe to see all columns ⇢</div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse" style={{ minWidth: marksEdit ? "560px" : "620px" }}>
+                        <thead>
+                          {marksEdit ? (
+                            <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500 bg-stone-50">
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "160px" }}>Student Name</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "110px" }}>Admission No.</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "90px" }}>Exam (100)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "100px" }}>Total (100)</th>
+                            </tr>
+                          ) : (
+                            <tr className="border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-500 bg-stone-50">
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "180px" }}>Student Name</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "130px" }}>Admission No.</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Exam Score (50)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "120px" }}>Total Score (100)</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "80px" }}>Grade</th>
+                              <th className="py-3 px-4 whitespace-nowrap" style={{ minWidth: "70px" }}>Pos.</th>
+                            </tr>
+                          )}
+                        </thead>
+                        <tbody className="divide-y divide-stone-100 text-sm">
+                          {marksEdit ? (
+                            marksEdit.map((m, idx) => {
+                              const { total } = computeScaledMarks(m);
+                              const hasAnyInput = ["individual_test", "group_work", "class_test", "project", "exam_raw"].some((f) => m[f] !== "");
+                              return (
+                                <tr key={m.student_id} className="hover:bg-stone-50/50">
+                                  <td className="py-3 px-4 font-medium" style={{ minWidth: "160px" }}>{m.name || "—"}</td>
+                                  <td className="py-3 px-4 text-stone-500 text-xs" style={{ minWidth: "110px" }}>{students.find(s => s.id === m.student_id)?.admission_no || "—"}</td>
+                                  <td className="py-3 px-4">
+                                    <input type="number" min="0" max="100" value={m.exam_raw} onChange={(ev) => handleScoreChange(idx, "exam_raw", ev.target.value)} className="w-20 border border-stone-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold" />
+                                  </td>
+                                  <td className="py-3 px-4 font-serif font-semibold">{hasAnyInput ? total : "—"}</td>
+                                </tr>
+                              );
+                            })
+                          ) : exam.marks && exam.marks.length > 0 ? (
+                            exam.marks.map((m, idx) => (
+                              <tr key={idx} className="hover:bg-stone-50/50">
+                                <td className="py-3 px-4 font-medium" style={{ minWidth: "180px" }}>{m.student_name || "—"}</td>
+                                <td className="py-3 px-4 text-stone-500 text-xs" style={{ minWidth: "130px" }}>{m.admission_no || "—"}</td>
+                                <td className="py-3 px-4">{m.exam_score ?? "—"}</td>
+                                <td className="py-3 px-4 font-serif font-semibold">{m.score}</td>
+                                <td className="py-3 px-4 font-semibold text-violet-900">{m.grade ?? "—"}</td>
+                                <td className="py-3 px-4">{getOrdinalSuffix(m.position)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan="6" className="py-8 text-center text-stone-400">No marks entered yet. Click "Edit Marks" to begin.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                      {marksEdit && (
+                        <p className="text-xs text-stone-500 mt-2 px-1">Total combines Classwork (scaled to 50) and Exam (scaled to 50), out of 100.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab Content: Audit Trail */}
+                {tab === "audit" && (
+                  <div className="p-5 space-y-3">
+                    <h3 className="font-serif text-lg mb-2">Audit Log</h3>
+                    {auditLog.length === 0 ? (
+                      <div className="text-stone-400 text-sm">No audit entries recorded.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {auditLog.map((log, i) => (
+                          <div key={i} className="border border-stone-200 rounded-lg p-3 text-sm bg-stone-50/50 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-violet-950">{log.action} <span className="text-xs font-normal text-stone-500">by {log.actor_name}</span></div>
+                              {log.details && <div className="text-xs text-stone-600 mt-0.5">{log.details}</div>}
+                            </div>
+                            <div className="text-xs text-stone-400">{fmt(log.created_at)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Tab Content: Version History */}
+                {tab === "versions" && (
+                  <div className="p-5 space-y-3">
+                    <h3 className="font-serif text-lg mb-2">Version History</h3>
+                    {versions.length === 0 ? (
+                      <div className="text-stone-400 text-sm">No version history available.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {versions.map((v, i) => (
+                          <div key={i} className="border border-stone-200 rounded-lg p-3 text-sm bg-stone-50/50 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium">Version {v.version_no}</div>
+                              <div className="text-xs text-stone-500">Saved by {v.actor_name} · {fmt(v.created_at)}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Tab Content: Report Cards */}
+                {tab === "report_cards" && exam.status === "published" && (
+                  <div className="p-5 space-y-3">
+                    <h3 className="font-serif text-lg mb-2">Student Report Cards</h3>
+                    {reportCards.length === 0 ? (
+                      <div className="text-stone-400 text-sm">Generating report cards…</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {reportCards.map((rc, i) => (
+                          <div key={i} className="border border-stone-200 rounded-lg p-4 bg-stone-50/50 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium">{rc.student_name} ({rc.admission_no})</div>
+                              <div className="text-xs text-stone-500">Total Score: {rc.total_score} · Position: {getOrdinalSuffix(rc.position)} · Grade: {rc.grade}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* REASON MODAL */}
+      {modal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h3 className="font-serif text-xl font-bold">
+              {modal === "admin_return" && "Return Exam to Teacher"}
+              {modal === "hm_return" && "Return Exam to Administrator"}
+              {modal === "reject_correction" && "Reject Correction Request"}
+              {modal === "emergency_unlock" && "Emergency Unlock Exam"}
+              {modal === "file_correction" && "Submit Correction Request"}
+            </h3>
+            <p className="text-xs text-stone-500">
+              {modal === "file_correction" ? "Please provide a reason for this post-approval correction request:" : "Please provide a mandatory reason for this action:"}
+            </p>
+            <textarea rows="3" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Type your detailed reason here…" className="w-full border border-stone-300 rounded-lg p-2.5 text-sm focus:outline-none focus:border-gold" />
+            <div className="flex justify-end gap-2 pt-2">
+              <Btn onClick={() => { setModal(null); setReason(""); }}>Cancel</Btn>
+              <Btn kind={["admin_return", "hm_return", "reject_correction", "emergency_unlock"].includes(modal) ? "danger" : "primary"} onClick={confirmModal}>Confirm</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
