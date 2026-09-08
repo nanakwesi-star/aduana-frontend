@@ -396,11 +396,36 @@ function StudentDashboard({ user, token, onSignOut }) {
   );
 }
 
+function GroupDropdown({ groupKey, label, count, students, columnLabelFn, isOpen, onToggle }) {
+  return (
+    <div className="border border-stone-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => onToggle(groupKey)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-stone-50 hover:bg-stone-100 transition text-left"
+      >
+        <span className="text-xs uppercase tracking-wider text-stone-600 font-medium">{label} — {count}</span>
+        <span className={`text-stone-400 text-xs transition-transform ${isOpen ? "rotate-180" : ""}`}>▼</span>
+      </button>
+      {isOpen && (
+        <div className="px-3 py-2 space-y-1">
+          {students.map((s) => (
+            <div key={s.id} className="text-sm text-stone-700 flex justify-between border-b border-stone-100 pb-1 last:border-b-0">
+              <span>{s.full_name}</span>
+              <span className="text-stone-400">{columnLabelFn(s)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StudentsBreakdownModal({ token, onClose }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [students, setStudents] = useState([]);
   const [breakdownView, setBreakdownView] = useState("class"); // "class" | "sex"
+  const [openGroups, setOpenGroups] = useState({});
 
   useEffect(() => {
     (async () => {
@@ -412,6 +437,10 @@ function StudentsBreakdownModal({ token, onClose }) {
     })();
   }, []);
 
+  function toggleGroup(key) {
+    setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   const byClass = React.useMemo(() => {
     const groups = {};
     students.forEach((s) => {
@@ -419,13 +448,14 @@ function StudentsBreakdownModal({ token, onClose }) {
       groups[s.class].push(s);
     });
     return Object.keys(groups).sort().map((c) => ({
-      class: c,
+      key: `class-${c}`,
+      label: c,
       students: groups[c].slice().sort((a, b) => a.full_name.localeCompare(b.full_name)),
     }));
   }, [students]);
 
   const bySex = React.useMemo(() => {
-    const labels = { M: "Male", F: "Female" };
+    const labels = { M: "Male", F: "Female", Unspecified: "Not recorded" };
     const groups = { M: [], F: [], Unspecified: [] };
     students.forEach((s) => {
       const key = s.sex === "M" || s.sex === "F" ? s.sex : "Unspecified";
@@ -434,7 +464,8 @@ function StudentsBreakdownModal({ token, onClose }) {
     return ["M", "F", "Unspecified"]
       .filter((k) => groups[k].length > 0)
       .map((k) => ({
-        label: labels[k] || "Not recorded",
+        key: `sex-${k}`,
+        label: labels[k],
         students: groups[k].slice().sort((a, b) => a.full_name.localeCompare(b.full_name)),
       }));
   }, [students]);
@@ -459,37 +490,35 @@ function StudentsBreakdownModal({ token, onClose }) {
             <div className="text-rose-700 text-sm">{error}</div>
           ) : breakdownView === "class" ? (
             byClass.length === 0 ? <div className="text-stone-400 text-sm text-center py-8">No students yet.</div> : (
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {byClass.map((g) => (
-                  <div key={g.class}>
-                    <div className="text-xs uppercase tracking-wider text-stone-500 mb-1.5">{g.class} — {g.students.length}</div>
-                    <div className="space-y-1">
-                      {g.students.map((s) => (
-                        <div key={s.id} className="text-sm text-stone-700 flex justify-between border-b border-stone-100 pb-1">
-                          <span>{s.full_name}</span>
-                          <span className="text-stone-400">{s.admission_no}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  <GroupDropdown
+                    key={g.key}
+                    groupKey={g.key}
+                    label={g.label}
+                    count={g.students.length}
+                    students={g.students}
+                    columnLabelFn={(s) => s.admission_no}
+                    isOpen={!!openGroups[g.key]}
+                    onToggle={toggleGroup}
+                  />
                 ))}
               </div>
             )
           ) : (
             bySex.length === 0 ? <div className="text-stone-400 text-sm text-center py-8">No students yet.</div> : (
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {bySex.map((g) => (
-                  <div key={g.label}>
-                    <div className="text-xs uppercase tracking-wider text-stone-500 mb-1.5">{g.label} — {g.students.length}</div>
-                    <div className="space-y-1">
-                      {g.students.map((s) => (
-                        <div key={s.id} className="text-sm text-stone-700 flex justify-between border-b border-stone-100 pb-1">
-                          <span>{s.full_name}</span>
-                          <span className="text-stone-400">{s.class}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  <GroupDropdown
+                    key={g.key}
+                    groupKey={g.key}
+                    label={g.label}
+                    count={g.students.length}
+                    students={g.students}
+                    columnLabelFn={(s) => s.class}
+                    isOpen={!!openGroups[g.key]}
+                    onToggle={toggleGroup}
+                  />
                 ))}
               </div>
             )
