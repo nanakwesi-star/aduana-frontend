@@ -612,6 +612,92 @@ function StudentsBreakdownModal({ token, onClose }) {
   );
 }
 
+/**
+ * Landing page for the SMS registration link an Administrator sends when
+ * inviting a new staff member. No login required — the token itself is
+ * the access key, same pattern as the Parent Portal links. Only asks for
+ * a password since the phone number was already collected at invite time.
+ */
+function StaffInviteRegistration({ token }) {
+  const [status, setStatus] = useState("loading"); // loading | ready | invalid | done
+  const [invite, setInvite] = useState(null);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    api(`/api/public/staff-invite/${token}`, null)
+      .then((data) => { setInvite(data); setStatus("ready"); })
+      .catch(() => setStatus("invalid"));
+  }, [token]);
+
+  async function submit() {
+    setError(null);
+    if (password.length < 8) return setError("Password must be at least 8 characters.");
+    if (password !== confirmPassword) return setError("Passwords don't match.");
+    setSubmitting(true);
+    try {
+      await api(`/api/public/staff-invite/${token}`, null, { method: "POST", body: JSON.stringify({ password }) });
+      setStatus("done");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-stone-900 text-stone-100 flex items-center justify-center p-4">
+      <div className="login-card-neu rounded-2xl p-8 w-full max-w-md relative overflow-hidden">
+        <div className="text-center mb-6">
+          <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-20 h-20 mx-auto object-contain drop-shadow-md" />
+          <h1 className="font-serif text-2xl font-bold mt-3">Aduana Model JHS</h1>
+          <p className="text-xs text-stone-400 mt-1">Complete Your Registration</p>
+        </div>
+
+        {status === "loading" && <p className="text-center text-sm text-stone-400">Checking your link…</p>}
+
+        {status === "invalid" && (
+          <div className="text-center space-y-2">
+            <p className="text-sm text-rose-400">This registration link is invalid or has expired.</p>
+            <p className="text-xs text-stone-400">Ask your Administrator to resend it from the Staff Directory.</p>
+          </div>
+        )}
+
+        {status === "ready" && invite && (
+          <div className="space-y-4">
+            <p className="text-sm text-stone-300 text-center">
+              Welcome, <span className="font-semibold text-gold">{invite.name}</span> — set a password to activate your {invite.role.replace("_", " ")} account.
+            </p>
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">New Password</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Confirm Password</label>
+              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" className="neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none" />
+            </div>
+            {error && <div className="text-rose-400 text-xs bg-rose-950/50 border border-rose-900 p-2.5 rounded-lg">{error}</div>}
+            <button onClick={submit} disabled={submitting} className="neu-btn w-full text-gold font-semibold py-2.5 rounded-lg transition text-sm disabled:opacity-50">
+              {submitting ? "Setting up…" : "Activate Account"}
+            </button>
+          </div>
+        )}
+
+        {status === "done" && (
+          <div className="flex flex-col items-center text-center py-4">
+            <div className="check-circle-neu w-16 h-16 rounded-full flex items-center justify-center text-3xl text-gold mb-4">✓</div>
+            <h2 className="font-serif text-xl font-bold">Account Activated!</h2>
+            <p className="text-xs text-stone-400 mt-2">You'll also get a confirmation SMS. You can now sign in with your phone number and password.</p>
+            <a href="/" className="neu-btn w-full text-gold font-semibold py-2.5 rounded-lg transition text-sm mt-5 inline-block">Go to Sign In</a>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -660,7 +746,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [staffList, setStaffList] = useState([]);
   const [classList, setClassList] = useState([]);
-  const [newStaff, setNewStaff] = useState({ name: "", email: "", password: "", role: "teacher" });
+  const [newStaff, setNewStaff] = useState({ surname: "", firstName: "", phone: "", role: "teacher" });
   const [newClass, setNewClass] = useState({ name: "", academicYear: "2026" });
   const [termForm, setTermForm] = useState({ term: "Term 2", academicYear: "2026" });
   const [showChangePw, setShowChangePw] = useState(false);
@@ -775,11 +861,19 @@ function App() {
   useEffect(() => { if (token && view === "admin") loadAdminData(); }, [token, view]);
 
   async function createStaff() {
-    if (!newStaff.name || !newStaff.email || !newStaff.password) return showToast("Fill in name, email, and password.", "error");
+    if (!newStaff.surname || !newStaff.firstName || !newStaff.phone) return showToast("Fill in surname, first name, and phone number.", "error");
     try {
       await api("/api/admin/users", token, { method: "POST", body: JSON.stringify(newStaff) });
-      showToast("Staff account created.", "success");
-      setNewStaff({ name: "", email: "", password: "", role: "teacher" });
+      showToast("Registration link sent by SMS.", "success");
+      setNewStaff({ surname: "", firstName: "", phone: "", role: "teacher" });
+      loadAdminData();
+    } catch (e) { showToast(e.message, "error"); }
+  }
+
+  async function resendInvite(id) {
+    try {
+      await api(`/api/admin/users/${id}/resend-invite`, token, { method: "POST" });
+      showToast("Registration link re-sent by SMS.", "success");
       loadAdminData();
     } catch (e) { showToast(e.message, "error"); }
   }
@@ -1346,6 +1440,11 @@ function App() {
     setReason("");
   }
 
+  const inviteToken = new URLSearchParams(window.location.search).get("invite");
+  if (inviteToken) {
+    return <StaffInviteRegistration token={inviteToken} />;
+  }
+
   if (!token) {
     return (
       <div className="min-h-screen bg-stone-900 text-stone-100 flex items-center justify-center p-4">
@@ -1365,8 +1464,8 @@ function App() {
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Email Address</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="name@aduanamodel.edu.gh" className={`neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none ${loginShake ? "input-error" : ""}`} />
+                  <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Phone Number or Email</label>
+                  <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="0551234567" className={`neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none ${loginShake ? "input-error" : ""}`} />
                 </div>
                 <div>
                   <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Password</label>
@@ -1503,11 +1602,12 @@ function App() {
           {adminTab === "staff" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
-              <h2 className="font-serif text-lg mb-3">Create Staff Account</h2>
+              <h2 className="font-serif text-lg mb-3">Invite Staff Member</h2>
+              <p className="text-xs text-stone-500 mb-3">They'll get an SMS with a link to set up their own password.</p>
               <div className="space-y-3">
-                <input type="text" placeholder="Full Name" value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
-                <input type="email" placeholder="Email Address" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
-                <input type="password" placeholder="Password (min 8 chars)" value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="text" placeholder="Surname" value={newStaff.surname} onChange={(e) => setNewStaff({ ...newStaff, surname: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="text" placeholder="First Name" value={newStaff.firstName} onChange={(e) => setNewStaff({ ...newStaff, firstName: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="tel" placeholder="Phone Number (e.g. 0551234567)" value={newStaff.phone} onChange={(e) => setNewStaff({ ...newStaff, phone: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
                 <div>
                   <label className="block text-xs text-stone-500 mb-1">Role</label>
                   <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
@@ -1516,7 +1616,7 @@ function App() {
                     <option value="headmaster">Headmaster</option>
                   </select>
                 </div>
-                <Btn kind="primary" onClick={createStaff}>Create Staff</Btn>
+                <Btn kind="primary" onClick={createStaff}>Send Registration Link</Btn>
               </div>
             </div>
 
@@ -1526,11 +1626,20 @@ function App() {
                 {staffList.map((s) => (
                   <div key={s.id} className="border border-stone-100 rounded-lg p-3 flex items-center justify-between bg-stone-50/50">
                     <div>
-                      <div className="font-medium text-sm">{s.name} {!s.is_active && <span className="text-xs text-rose-600">(Deactivated)</span>}</div>
-                      <div className="text-xs text-stone-500">{s.email} · <span className="uppercase">{s.role}</span></div>
+                      <div className="font-medium text-sm">
+                        {s.name}{" "}
+                        {!s.active && <span className="text-xs text-rose-600">(Deactivated)</span>}
+                        {s.pending && <span className="ml-1 text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">Pending</span>}
+                      </div>
+                      <div className="text-xs text-stone-500">{s.phone || s.email || "No contact on file"} · <span className="uppercase">{s.role}</span></div>
                     </div>
                     <div className="flex items-center gap-1">
-                      {resetPwFor === s.id ? (
+                      {s.pending ? (
+                        <>
+                          <button onClick={() => resendInvite(s.id)} className="text-xs text-violet-700 hover:underline mr-2">Resend Link</button>
+                          <button onClick={() => deleteStaffAccount(s.id, s.name)} className="text-xs text-rose-700 hover:underline font-semibold">Cancel Invite</button>
+                        </>
+                      ) : resetPwFor === s.id ? (
                         <div className="flex items-center gap-1">
                           <input type="password" placeholder="New password" value={resetPwValue} onChange={(e) => setResetPwValue(e.target.value)} className="border rounded px-2 py-1 text-xs w-28" />
                           <Btn kind="primary" onClick={() => resetAccountPassword(s.id)}>Save</Btn>
@@ -1539,7 +1648,7 @@ function App() {
                       ) : (
                         <>
                           <button onClick={() => setResetPwFor(s.id)} className="text-xs text-violet-700 hover:underline mr-2">Reset Pw</button>
-                          {s.is_active && <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-700 hover:underline mr-2">Deactivate</button>}
+                          {s.active && <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-700 hover:underline mr-2">Deactivate</button>}
                           <button onClick={() => deleteStaffAccount(s.id, s.name)} className="text-xs text-rose-700 hover:underline font-semibold">Delete</button>
                         </>
                       )}
