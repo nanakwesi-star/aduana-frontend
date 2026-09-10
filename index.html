@@ -48,6 +48,21 @@ body { font-family: system-ui, sans-serif; background: #FFFDF7; }
   box-shadow: inset 5px 5px 10px #4a1010, inset -5px -5px 10px #3d3632;
   animation: neu-rotate-error 0.5s ease-in-out;
 }
+/* Android/Chrome injects its own background+shadow on recognized login
+   fields ("remember this password?" highlighting), which otherwise wipes
+   out the embossed look above. This forces our dark background and shadow
+   back on top of it, and keeps the typed text light instead of the
+   browser's default black. */
+.neu-input:-webkit-autofill,
+.neu-input:-webkit-autofill:hover,
+.neu-input:-webkit-autofill:focus,
+.neu-input:-webkit-autofill:active {
+  -webkit-text-fill-color: #f5f5f4;
+  caret-color: #f5f5f4;
+  transition: background-color 9999s ease-in-out 0s;
+  -webkit-box-shadow: inset 5px 5px 10px #0a0807, inset -5px -5px 10px #3d3632, 0 0 0px 1000px #262220 inset;
+  box-shadow: inset 5px 5px 10px #0a0807, inset -5px -5px 10px #3d3632, 0 0 0px 1000px #262220 inset;
+}
 @keyframes neu-rotate-error {
   0% { transform: rotate(0deg); }
   20% { transform: rotate(-6deg); }
@@ -883,7 +898,7 @@ function App() {
     }
     setLoggingIn(false);
   }
-  function signOut() { setToken(null); setUser(null); setEmail(""); setPassword(""); setExams([]); setExam(null); setSelectedId(null); setView("exams"); }
+  function signOut() { setToken(null); setUser(null); setEmail(""); setPassword(""); setExams([]); setExam(null); setSelectedId(null); setView("exams"); setLoginSuccess(false); setLoginError(null); setLoginShake(false); }
 
   const loadExams = useCallback(async () => {
     if (!token) return;
