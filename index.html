@@ -251,28 +251,6 @@ function Btn({ children, onClick, kind = "secondary", disabled }) {
   );
 }
 
-const NAV_ICON_PATHS = {
-  exams: "M9 12h6M9 16h6M9 8h1M5 4h10l4 4v12a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z",
-  admin: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z",
-  approvals: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-5 8l2 2 4-4",
-  accounts: "M3 7h18M3 7v10a2 2 0 002 2h14a2 2 0 002-2V7M3 7l2-3h14l2 3M8 12h1m6 0h1",
-  dashboard: "M4 19h16M6 19V9l4-4 4 4v10M14 19v-6h4v6",
-  password: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm2-10V7a4 4 0 118 0v2",
-  signout: "M9 5H6a2 2 0 00-2 2v10a2 2 0 002 2h3m4-4l4-4m0 0l-4-4m4 4H9",
-  menu: "M4 6h16M4 12h16M4 18h16",
-  close: "M6 6l12 12M18 6L6 18",
-};
-
-function NavIcon({ name }) {
-  const d = NAV_ICON_PATHS[name];
-  if (!d) return null;
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
-      <path d={d} />
-    </svg>
-  );
-}
-
 function ChangePasswordModal({ token, onClose, showToastFn }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -612,92 +590,6 @@ function StudentsBreakdownModal({ token, onClose }) {
   );
 }
 
-/**
- * Landing page for the SMS registration link an Administrator sends when
- * inviting a new staff member. No login required — the token itself is
- * the access key, same pattern as the Parent Portal links. Only asks for
- * a password since the phone number was already collected at invite time.
- */
-function StaffInviteRegistration({ token }) {
-  const [status, setStatus] = useState("loading"); // loading | ready | invalid | done
-  const [invite, setInvite] = useState(null);
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    api(`/api/public/staff-invite/${token}`, null)
-      .then((data) => { setInvite(data); setStatus("ready"); })
-      .catch(() => setStatus("invalid"));
-  }, [token]);
-
-  async function submit() {
-    setError(null);
-    if (password.length < 8) return setError("Password must be at least 8 characters.");
-    if (password !== confirmPassword) return setError("Passwords don't match.");
-    setSubmitting(true);
-    try {
-      await api(`/api/public/staff-invite/${token}`, null, { method: "POST", body: JSON.stringify({ password }) });
-      setStatus("done");
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="min-h-screen bg-stone-900 text-stone-100 flex items-center justify-center p-4">
-      <div className="login-card-neu rounded-2xl p-8 w-full max-w-md relative overflow-hidden">
-        <div className="text-center mb-6">
-          <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-20 h-20 mx-auto object-contain drop-shadow-md" />
-          <h1 className="font-serif text-2xl font-bold mt-3">Aduana Model JHS</h1>
-          <p className="text-xs text-stone-400 mt-1">Complete Your Registration</p>
-        </div>
-
-        {status === "loading" && <p className="text-center text-sm text-stone-400">Checking your link…</p>}
-
-        {status === "invalid" && (
-          <div className="text-center space-y-2">
-            <p className="text-sm text-rose-400">This registration link is invalid or has expired.</p>
-            <p className="text-xs text-stone-400">Ask your Administrator to resend it from the Staff Directory.</p>
-          </div>
-        )}
-
-        {status === "ready" && invite && (
-          <div className="space-y-4">
-            <p className="text-sm text-stone-300 text-center">
-              Welcome, <span className="font-semibold text-gold">{invite.name}</span> — set a password to activate your {invite.role.replace("_", " ")} account.
-            </p>
-            <div>
-              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">New Password</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none" />
-            </div>
-            <div>
-              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Confirm Password</label>
-              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" className="neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none" />
-            </div>
-            {error && <div className="text-rose-400 text-xs bg-rose-950/50 border border-rose-900 p-2.5 rounded-lg">{error}</div>}
-            <button onClick={submit} disabled={submitting} className="neu-btn w-full text-gold font-semibold py-2.5 rounded-lg transition text-sm disabled:opacity-50">
-              {submitting ? "Setting up…" : "Activate Account"}
-            </button>
-          </div>
-        )}
-
-        {status === "done" && (
-          <div className="flex flex-col items-center text-center py-4">
-            <div className="check-circle-neu w-16 h-16 rounded-full flex items-center justify-center text-3xl text-gold mb-4">✓</div>
-            <h2 className="font-serif text-xl font-bold">Account Activated!</h2>
-            <p className="text-xs text-stone-400 mt-2">You'll also get a confirmation SMS. You can now sign in with your phone number and password.</p>
-            <a href="/" className="neu-btn w-full text-gold font-semibold py-2.5 rounded-lg transition text-sm mt-5 inline-block">Go to Sign In</a>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -743,10 +635,9 @@ function App() {
   const [modal, setModal] = useState(null);
   const [reason, setReason] = useState("");
   const [view, setView] = useState("exams");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [staffList, setStaffList] = useState([]);
   const [classList, setClassList] = useState([]);
-  const [newStaff, setNewStaff] = useState({ surname: "", firstName: "", phone: "", role: "teacher" });
+  const [newStaff, setNewStaff] = useState({ name: "", email: "", password: "", role: "teacher" });
   const [newClass, setNewClass] = useState({ name: "", academicYear: "2026" });
   const [termForm, setTermForm] = useState({ term: "Term 2", academicYear: "2026" });
   const [showChangePw, setShowChangePw] = useState(false);
@@ -861,19 +752,11 @@ function App() {
   useEffect(() => { if (token && view === "admin") loadAdminData(); }, [token, view]);
 
   async function createStaff() {
-    if (!newStaff.surname || !newStaff.firstName || !newStaff.phone) return showToast("Fill in surname, first name, and phone number.", "error");
+    if (!newStaff.name || !newStaff.email || !newStaff.password) return showToast("Fill in name, email, and password.", "error");
     try {
       await api("/api/admin/users", token, { method: "POST", body: JSON.stringify(newStaff) });
-      showToast("Registration link sent by SMS.", "success");
-      setNewStaff({ surname: "", firstName: "", phone: "", role: "teacher" });
-      loadAdminData();
-    } catch (e) { showToast(e.message, "error"); }
-  }
-
-  async function resendInvite(id) {
-    try {
-      await api(`/api/admin/users/${id}/resend-invite`, token, { method: "POST" });
-      showToast("Registration link re-sent by SMS.", "success");
+      showToast("Staff account created.", "success");
+      setNewStaff({ name: "", email: "", password: "", role: "teacher" });
       loadAdminData();
     } catch (e) { showToast(e.message, "error"); }
   }
@@ -1115,6 +998,7 @@ function App() {
   useEffect(() => {
     if (token && user?.role === "teacher") {
       api("/api/pta/my-status", token).then(setPtaMyStatus).catch(() => {});
+      api("/api/timetables/mine", token).then(setMyTimetable).catch(() => {});
     }
   }, [token, user]);
 
@@ -1125,6 +1009,47 @@ function App() {
       api("/api/pta/payments", token).then(setPtaQueue).catch(() => {});
     }
   }, [token, user]);
+
+  const [timetables, setTimetables] = useState([]);
+  const [ttNewUpload, setTtNewUpload] = useState({ teacherId: "", file: null });
+  const [ttUploading, setTtUploading] = useState(false);
+  const [myTimetable, setMyTimetable] = useState(null);
+
+  async function uploadTimetable() {
+    if (!ttNewUpload.teacherId || !ttNewUpload.file) return showToast("Select a teacher and a PDF file.", "error");
+    setTtUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", ttNewUpload.file);
+      const res = await fetch(`${API_BASE}/api/timetables/${ttNewUpload.teacherId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Upload failed.");
+      showToast("Timetable uploaded.", "success");
+      setTtNewUpload({ teacherId: "", file: null });
+      setTimetables(await api("/api/timetables", token));
+    } catch (e) { showToast(e.message, "error"); }
+    setTtUploading(false);
+  }
+
+  async function downloadMyTimetable() {
+    try {
+      const res = await fetch(`${API_BASE}/api/timetables/mine/download`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || "Could not download timetable."); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = myTimetable?.file_name || "timetable.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) { showToast(e.message, "error"); }
+  }
 
   async function loadAccountsData() {
     try {
@@ -1146,6 +1071,7 @@ function App() {
         setPtaQueue(queue);
         if (teachers.length) setStaffList(teachers);
         if (!classList.length && user.role === "administrator") setClassList(await api("/api/admin/classes", token));
+        if (user.role === "administrator") setTimetables(await api("/api/timetables", token));
       }
     } catch (e) { showToast(e.message, "error"); }
   }
@@ -1440,11 +1366,6 @@ function App() {
     setReason("");
   }
 
-  const inviteToken = new URLSearchParams(window.location.search).get("invite");
-  if (inviteToken) {
-    return <StaffInviteRegistration token={inviteToken} />;
-  }
-
   if (!token) {
     return (
       <div className="min-h-screen bg-stone-900 text-stone-100 flex items-center justify-center p-4">
@@ -1464,8 +1385,8 @@ function App() {
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Phone Number or Email</label>
-                  <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="0551234567" className={`neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none ${loginShake ? "input-error" : ""}`} />
+                  <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Email or Phone Number</label>
+                  <input type="text" inputMode="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="name@aduanamodel.edu.gh or 024xxxxxxx" className={`neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none ${loginShake ? "input-error" : ""}`} />
                 </div>
                 <div>
                   <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Password</label>
@@ -1487,77 +1408,58 @@ function App() {
   if (user?.role === "student") return <StudentDashboard user={user} token={token} onSignOut={signOut} />;
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900 flex">
-      {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-violet-950 text-violet-50 flex flex-col transform transition-transform duration-200 lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
-        <div className="h-16 px-4 flex items-center gap-3 border-b border-violet-900 flex-shrink-0">
-          <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-9 h-9 object-contain flex-shrink-0" />
-          <div className="min-w-0">
-            <div className="font-serif text-base leading-tight truncate">Aduana Model JHS</div>
-            <div className="text-[10px] text-violet-300 truncate">Results & Assessment Portal</div>
+    <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col">
+      <div className="bg-violet-950 text-violet-50 px-3 sm:px-4 py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-md">
+        <div className="flex items-center justify-between sm:justify-start gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-8 h-8 sm:w-9 sm:h-9 object-contain" />
+            <div>
+              <div className="font-serif text-base sm:text-lg leading-tight">Aduana Model JHS</div>
+              <div className="text-[11px] text-violet-300 -mt-0.5 hidden sm:block">Results Workflow & Assessment Portal</div>
+            </div>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="ml-auto text-violet-300 hover:text-white lg:hidden" aria-label="Close menu">
-            <NavIcon name="close" />
-          </button>
-        </div>
-
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          <button onClick={() => { setView("exams"); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${view === "exams" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:bg-violet-900"}`}>
-            <NavIcon name="exams" /> Exams
-          </button>
-          {["administrator", "super_administrator"].includes(user.role) && (
-            <button onClick={() => { setView("admin"); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${view === "admin" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:bg-violet-900"}`}>
-              <NavIcon name="admin" /> Admin Panel
-            </button>
-          )}
-          {["administrator", "super_administrator", "headmaster"].includes(user.role) && (
-            <button onClick={() => { setView("student_approvals"); setSidebarOpen(false); }} className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition ${view === "student_approvals" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:bg-violet-900"}`}>
-              <span className="flex items-center gap-3"><NavIcon name="approvals" /> Student Approvals</span>
-              {pendingStudents.length > 0 && <span className="bg-rose-600 text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{pendingStudents.length}</span>}
-            </button>
-          )}
-          {(["administrator", "super_administrator", "headmaster"].includes(user.role) || (user.role === "teacher" && ptaMyStatus.isCollector)) && (
-            <button onClick={() => { setView("accounts"); setSidebarOpen(false); }} className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition ${view === "accounts" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:bg-violet-900"}`}>
-              <span className="flex items-center gap-3"><NavIcon name="accounts" /> Accounts</span>
-              {ptaQueue.length > 0 && ["administrator", "super_administrator", "headmaster"].includes(user.role) && <span className="bg-rose-600 text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{ptaQueue.length}</span>}
-            </button>
-          )}
-          {["administrator", "super_administrator", "headmaster"].includes(user.role) && (
-            <button onClick={() => { setView("reports"); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${view === "reports" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:bg-violet-900"}`}>
-              <NavIcon name="dashboard" /> Dashboard
-            </button>
-          )}
-        </nav>
-
-        <div className="p-3 border-t border-violet-900 space-y-1 flex-shrink-0">
-          <div className="px-3 py-2">
-            <div className="font-medium text-violet-100 text-sm truncate">{user.name}</div>
+          <div className="text-right sm:hidden">
+            <div className="font-medium text-violet-100 text-xs">{user.name}</div>
             <div className="text-[10px] text-violet-300 uppercase tracking-wider">{user.role.replace("_", " ")}</div>
           </div>
-          <button onClick={() => setShowChangePw(true)} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-violet-300 hover:bg-violet-900 hover:text-white transition">
-            <NavIcon name="password" /> Password
-          </button>
-          <button onClick={signOut} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-violet-300 hover:bg-violet-900 hover:text-white transition">
-            <NavIcon name="signout" /> Sign out
-          </button>
         </div>
-      </aside>
-
-      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/40 z-30 lg:hidden" aria-hidden="true" />}
-
-      {/* Main column */}
-      <div className="flex-1 min-w-0 flex flex-col lg:pl-64">
-        <div className="lg:hidden sticky top-0 z-20 bg-violet-950 text-violet-50 px-3 py-2.5 flex items-center justify-between shadow-md flex-shrink-0">
-          <button onClick={() => setSidebarOpen(true)} className="text-violet-200 hover:text-white" aria-label="Open menu">
-            <NavIcon name="menu" />
-          </button>
-          <div className="font-serif text-sm">Aduana Model JHS</div>
-          <div className="w-[18px]" />
+        <div className="flex items-center gap-2 sm:gap-4 text-sm overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+          <div className="text-right hidden sm:block flex-shrink-0">
+            <div className="font-medium text-violet-100">{user.name}</div>
+            <div className="text-[11px] text-violet-300 uppercase tracking-wider">{user.role.replace("_", " ")}</div>
+          </div>
+          {(["administrator", "super_administrator", "headmaster"].includes(user.role) || (user.role === "teacher" && ptaMyStatus.isCollector)) && (
+            <div className="flex bg-violet-900/80 rounded-lg p-0.5 border border-violet-800 flex-shrink-0">
+              <button onClick={() => setView("exams")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "exams" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Exams</button>
+              {["administrator", "super_administrator"].includes(user.role) && (
+                <button onClick={() => setView("admin")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "admin" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Admin Panel</button>
+              )}
+              {["administrator", "super_administrator", "headmaster"].includes(user.role) && (
+                <button onClick={() => setView("student_approvals")} className={`px-3 py-1 rounded-md text-xs font-medium transition inline-flex items-center gap-1.5 whitespace-nowrap ${view === "student_approvals" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>
+                  Student Approvals
+                  {pendingStudents.length > 0 && <span className="bg-rose-600 text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{pendingStudents.length}</span>}
+                </button>
+              )}
+              <button onClick={() => setView("accounts")} className={`px-3 py-1 rounded-md text-xs font-medium transition inline-flex items-center gap-1.5 whitespace-nowrap ${view === "accounts" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>
+                Accounts
+                {ptaQueue.length > 0 && ["administrator", "super_administrator", "headmaster"].includes(user.role) && <span className="bg-rose-600 text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{ptaQueue.length}</span>}
+              </button>
+              {["administrator", "super_administrator", "headmaster"].includes(user.role) && (
+                <button onClick={() => setView("reports")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "reports" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Dashboard</button>
+              )}
+            </div>
+          )}
+          {user.role === "teacher" && myTimetable && (
+            <button onClick={downloadMyTimetable} className="text-gold hover:text-gold-light text-xs font-medium whitespace-nowrap flex-shrink-0">My Timetable</button>
+          )}
+          <button onClick={() => setShowChangePw(true)} className="text-violet-300 hover:text-white text-xs whitespace-nowrap flex-shrink-0">Password</button>
+          <button onClick={signOut} className="text-violet-300 hover:text-white text-xs whitespace-nowrap flex-shrink-0">Sign out</button>
         </div>
+      </div>
 
-        {showChangePw && <ChangePasswordModal token={token} onClose={() => setShowChangePw(false)} showToastFn={showToast} />}
-        {showStudentsModal && <StudentsBreakdownModal token={token} onClose={() => setShowStudentsModal(false)} />}
-        {toast && <div className={`fixed bottom-4 right-4 px-4 py-2.5 rounded-lg shadow-lg text-sm text-white z-50 ${toast.kind === "error" ? "bg-rose-700" : toast.kind === "success" ? "bg-emerald-700" : "bg-stone-800"}`}>{toast.msg}</div>}
+      {showChangePw && <ChangePasswordModal token={token} onClose={() => setShowChangePw(false)} showToastFn={showToast} />}
+      {showStudentsModal && <StudentsBreakdownModal token={token} onClose={() => setShowStudentsModal(false)} />}
+      {toast && <div className={`fixed bottom-4 right-4 px-4 py-2.5 rounded-lg shadow-lg text-sm text-white z-50 ${toast.kind === "error" ? "bg-rose-700" : toast.kind === "success" ? "bg-emerald-700" : "bg-stone-800"}`}>{toast.msg}</div>}
 
       {/* ADMIN PANEL VIEW */}
       {view === "admin" && ["administrator", "super_administrator"].includes(user.role) ? (
@@ -1602,12 +1504,11 @@ function App() {
           {adminTab === "staff" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
-              <h2 className="font-serif text-lg mb-3">Invite Staff Member</h2>
-              <p className="text-xs text-stone-500 mb-3">They'll get an SMS with a link to set up their own password.</p>
+              <h2 className="font-serif text-lg mb-3">Create Staff Account</h2>
               <div className="space-y-3">
-                <input type="text" placeholder="Surname" value={newStaff.surname} onChange={(e) => setNewStaff({ ...newStaff, surname: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
-                <input type="text" placeholder="First Name" value={newStaff.firstName} onChange={(e) => setNewStaff({ ...newStaff, firstName: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
-                <input type="tel" placeholder="Phone Number (e.g. 0551234567)" value={newStaff.phone} onChange={(e) => setNewStaff({ ...newStaff, phone: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="text" placeholder="Full Name" value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="email" placeholder="Email Address" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="password" placeholder="Password (min 8 chars)" value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
                 <div>
                   <label className="block text-xs text-stone-500 mb-1">Role</label>
                   <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
@@ -1616,7 +1517,7 @@ function App() {
                     <option value="headmaster">Headmaster</option>
                   </select>
                 </div>
-                <Btn kind="primary" onClick={createStaff}>Send Registration Link</Btn>
+                <Btn kind="primary" onClick={createStaff}>Create Staff</Btn>
               </div>
             </div>
 
@@ -1626,20 +1527,11 @@ function App() {
                 {staffList.map((s) => (
                   <div key={s.id} className="border border-stone-100 rounded-lg p-3 flex items-center justify-between bg-stone-50/50">
                     <div>
-                      <div className="font-medium text-sm">
-                        {s.name}{" "}
-                        {!s.active && <span className="text-xs text-rose-600">(Deactivated)</span>}
-                        {s.pending && <span className="ml-1 text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">Pending</span>}
-                      </div>
-                      <div className="text-xs text-stone-500">{s.phone || s.email || "No contact on file"} · <span className="uppercase">{s.role}</span></div>
+                      <div className="font-medium text-sm">{s.name} {!s.is_active && <span className="text-xs text-rose-600">(Deactivated)</span>}</div>
+                      <div className="text-xs text-stone-500">{s.email} · <span className="uppercase">{s.role}</span></div>
                     </div>
                     <div className="flex items-center gap-1">
-                      {s.pending ? (
-                        <>
-                          <button onClick={() => resendInvite(s.id)} className="text-xs text-violet-700 hover:underline mr-2">Resend Link</button>
-                          <button onClick={() => deleteStaffAccount(s.id, s.name)} className="text-xs text-rose-700 hover:underline font-semibold">Cancel Invite</button>
-                        </>
-                      ) : resetPwFor === s.id ? (
+                      {resetPwFor === s.id ? (
                         <div className="flex items-center gap-1">
                           <input type="password" placeholder="New password" value={resetPwValue} onChange={(e) => setResetPwValue(e.target.value)} className="border rounded px-2 py-1 text-xs w-28" />
                           <Btn kind="primary" onClick={() => resetAccountPassword(s.id)}>Save</Btn>
@@ -1648,7 +1540,7 @@ function App() {
                       ) : (
                         <>
                           <button onClick={() => setResetPwFor(s.id)} className="text-xs text-violet-700 hover:underline mr-2">Reset Pw</button>
-                          {s.active && <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-700 hover:underline mr-2">Deactivate</button>}
+                          {s.is_active && <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-700 hover:underline mr-2">Deactivate</button>}
                           <button onClick={() => deleteStaffAccount(s.id, s.name)} className="text-xs text-rose-700 hover:underline font-semibold">Delete</button>
                         </>
                       )}
@@ -1884,6 +1776,41 @@ function App() {
                     <Btn kind="danger" onClick={() => revokePtaCollector(c.id)}>Revoke</Btn>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* ADMIN: TEACHER TIMETABLES */}
+          {user.role === "administrator" && (
+            <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm">
+              <h2 className="font-serif text-lg mb-1">Teacher Timetables</h2>
+              <p className="text-xs text-stone-500 mb-3">Upload a PDF timetable for a teacher — they'll see a "My Timetable" download button on their own dashboard. Re-uploading for the same teacher replaces their previous file.</p>
+              <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                <select value={ttNewUpload.teacherId} onChange={(e) => setTtNewUpload({ ...ttNewUpload, teacherId: e.target.value })} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+                  <option value="" disabled>Select teacher…</option>
+                  {staffList.filter((s) => s.role === "teacher").map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <input type="file" accept="application/pdf" onChange={(e) => setTtNewUpload({ ...ttNewUpload, file: e.target.files[0] || null })} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-1.5 text-sm bg-white" />
+                <Btn kind="primary" onClick={uploadTimetable} disabled={ttUploading}>{ttUploading ? "Uploading…" : "Upload"}</Btn>
+              </div>
+              <div className="space-y-2">
+                {staffList.filter((s) => s.role === "teacher").length === 0 ? (
+                  <div className="text-stone-400 text-sm">No teacher accounts yet.</div>
+                ) : staffList.filter((s) => s.role === "teacher").map((t) => {
+                  const tt = timetables.find((x) => x.teacher_id === t.id);
+                  return (
+                    <div key={t.id} className="flex items-center justify-between gap-3 border border-stone-200 rounded-lg px-3 py-2 text-sm">
+                      <span className="font-medium">{t.name}</span>
+                      {tt ? (
+                        <span className="text-xs text-emerald-700">Uploaded {fmt(tt.uploaded_at)}</span>
+                      ) : (
+                        <span className="text-xs text-stone-400">Not yet uploaded</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -2622,7 +2549,6 @@ function App() {
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 }
