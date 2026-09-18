@@ -645,7 +645,7 @@ function App() {
   const [view, setView] = useState("exams");
   const [staffList, setStaffList] = useState([]);
   const [classList, setClassList] = useState([]);
-  const [newStaff, setNewStaff] = useState({ name: "", email: "", password: "", role: "teacher" });
+  const [newStaff, setNewStaff] = useState({ surname: "", firstName: "", phone: "", role: "teacher" });
   const [newClass, setNewClass] = useState({ name: "", academicYear: "2026" });
   const [termForm, setTermForm] = useState({ term: "Term 2", academicYear: "2026" });
   const [showChangePw, setShowChangePw] = useState(false);
@@ -760,11 +760,11 @@ function App() {
   useEffect(() => { if (token && view === "admin") loadAdminData(); }, [token, view]);
 
   async function createStaff() {
-    if (!newStaff.name || !newStaff.email || !newStaff.password) return showToast("Fill in name, email, and password.", "error");
+    if (!newStaff.surname.trim() || !newStaff.firstName.trim() || !newStaff.phone.trim()) return showToast("Fill in surname, first name, and phone number.", "error");
     try {
-      await api("/api/admin/users", token, { method: "POST", body: JSON.stringify(newStaff) });
-      showToast("Staff account created.", "success");
-      setNewStaff({ name: "", email: "", password: "", role: "teacher" });
+      const created = await api("/api/admin/users", token, { method: "POST", body: JSON.stringify(newStaff) });
+      showToast(created.smsFailed ? "Account created, but the SMS invite failed to send — use Resend Link." : "Staff account created — invite link texted to them.", created.smsFailed ? "error" : "success");
+      setNewStaff({ surname: "", firstName: "", phone: "", role: "teacher" });
       loadAdminData();
     } catch (e) { showToast(e.message, "error"); }
   }
@@ -786,15 +786,11 @@ function App() {
     } catch (e) { showToast(e.message, "error"); }
   }
 
-  const [resetPwFor, setResetPwFor] = useState(null);
-  const [resetPwValue, setResetPwValue] = useState("");
-
-  async function resetAccountPassword(id) {
-    if (!resetPwValue || resetPwValue.length < 8) return showToast("New password must be at least 8 characters.", "error");
+  async function resendInvite(id) {
     try {
-      await api(`/api/admin/users/${id}/reset-password`, token, { method: "PATCH", body: JSON.stringify({ newPassword: resetPwValue }) });
-      showToast("Password reset.", "success");
-      setResetPwFor(null); setResetPwValue("");
+      await api(`/api/admin/users/${id}/resend-invite`, token, { method: "POST" });
+      showToast("Invite link resent by SMS.", "success");
+      loadAdminData();
     } catch (e) { showToast(e.message, "error"); }
   }
 
@@ -995,7 +991,15 @@ function App() {
   }, [token, user]);
 
   useEffect(() => { loadTeacherSetupData(); }, [loadTeacherSetupData]);
-  useEffect(() => { if (currentTerm) setTermForm({ term: currentTerm.term, academicYear: String(currentTerm.academic_year) }); }, [currentTerm]);
+  const VALID_TERMS = ["Term 1", "Term 2", "Term 3"];
+  useEffect(() => {
+    if (currentTerm) {
+      setTermForm({
+        term: VALID_TERMS.includes(currentTerm.term) ? currentTerm.term : "Term 1",
+        academicYear: String(currentTerm.academic_year),
+      });
+    }
+  }, [currentTerm]);
 
   // ---------------------------------------------------------------
   // Accounts (PTA Dues)
@@ -1513,11 +1517,12 @@ function App() {
           {adminTab === "staff" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
-              <h2 className="font-serif text-lg mb-3">Create Staff Account</h2>
+              <h2 className="font-serif text-lg mb-1">Create Staff Account</h2>
+              <p className="text-xs text-stone-500 mb-3">They'll get a text with a link to set their own password — no email or password needed here.</p>
               <div className="space-y-3">
-                <input type="text" placeholder="Full Name" value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
-                <input type="email" placeholder="Email Address" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
-                <input type="password" placeholder="Password (min 8 chars)" value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="text" placeholder="Surname" value={newStaff.surname} onChange={(e) => setNewStaff({ ...newStaff, surname: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="text" placeholder="First Name" value={newStaff.firstName} onChange={(e) => setNewStaff({ ...newStaff, firstName: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+                <input type="tel" placeholder="Phone (e.g. 024xxxxxxx)" value={newStaff.phone} onChange={(e) => setNewStaff({ ...newStaff, phone: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
                 <div>
                   <label className="block text-xs text-stone-500 mb-1">Role</label>
                   <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
@@ -1536,23 +1541,13 @@ function App() {
                 {staffList.map((s) => (
                   <div key={s.id} className="border border-stone-100 rounded-lg p-3 flex items-center justify-between bg-stone-50/50">
                     <div>
-                      <div className="font-medium text-sm">{s.name} {!s.is_active && <span className="text-xs text-rose-600">(Deactivated)</span>}</div>
-                      <div className="text-xs text-stone-500">{s.email} · <span className="uppercase">{s.role}</span></div>
+                      <div className="font-medium text-sm">{s.name} {!s.active && <span className="text-xs text-rose-600">(Deactivated)</span>} {s.pending && <span className="text-xs text-amber-600">(Pending registration)</span>}</div>
+                      <div className="text-xs text-stone-500">{s.phone || s.email || "—"} · <span className="uppercase">{s.role}</span></div>
                     </div>
                     <div className="flex items-center gap-1">
-                      {resetPwFor === s.id ? (
-                        <div className="flex items-center gap-1">
-                          <input type="password" placeholder="New password" value={resetPwValue} onChange={(e) => setResetPwValue(e.target.value)} className="border rounded px-2 py-1 text-xs w-28" />
-                          <Btn kind="primary" onClick={() => resetAccountPassword(s.id)}>Save</Btn>
-                          <Btn onClick={() => { setResetPwFor(null); setResetPwValue(""); }}>Cancel</Btn>
-                        </div>
-                      ) : (
-                        <>
-                          <button onClick={() => setResetPwFor(s.id)} className="text-xs text-violet-700 hover:underline mr-2">Reset Pw</button>
-                          {s.is_active && <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-700 hover:underline mr-2">Deactivate</button>}
-                          <button onClick={() => deleteStaffAccount(s.id, s.name)} className="text-xs text-rose-700 hover:underline font-semibold">Delete</button>
-                        </>
-                      )}
+                      {s.pending && <button onClick={() => resendInvite(s.id)} className="text-xs text-violet-700 hover:underline mr-2">Resend Link</button>}
+                      {s.active && <button onClick={() => deactivateStaff(s.id)} className="text-xs text-rose-700 hover:underline mr-2">Deactivate</button>}
+                      <button onClick={() => deleteStaffAccount(s.id, s.name)} className="text-xs text-rose-700 hover:underline font-semibold">Delete</button>
                     </div>
                   </div>
                 ))}
