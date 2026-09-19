@@ -105,11 +105,11 @@ const STATUS_META = {
   draft: { label: "Draft", color: "bg-stone-200 text-stone-700" },
   submitted: { label: "Awaiting Admin Review", color: "bg-amber-100 text-amber-800" },
   admin_returned: { label: "Returned to Teacher", color: "bg-rose-100 text-rose-800" },
-  admin_approved: { label: "Awaiting Headmaster", color: "bg-violet-100 text-violet-800" },
+  admin_approved: { label: "Awaiting Head", color: "bg-violet-100 text-violet-800" },
   hm_returned: { label: "Returned to Administrator", color: "bg-rose-100 text-rose-800" },
   published: { label: "Published", color: "bg-emerald-100 text-emerald-800" },
   correction_pending_admin: { label: "Correction — Awaiting Admin", color: "bg-amber-100 text-amber-800" },
-  correction_pending_hm: { label: "Correction — Awaiting Headmaster", color: "bg-violet-100 text-violet-800" },
+  correction_pending_hm: { label: "Correction — Awaiting Head", color: "bg-violet-100 text-violet-800" },
   locked: { label: "Permanently Locked", color: "bg-stone-800 text-stone-100" },
 };
 
@@ -137,10 +137,10 @@ const PTA_STATUS_HEX = {
 
 const PTA_STATUS_LABELS = {
   pending_admin: "Pending Admin",
-  pending_headmaster: "Pending Headmaster",
+  pending_headmaster: "Pending Head",
   recorded: "Recorded (Validated)",
   rejected_admin: "Rejected by Admin",
-  rejected_headmaster: "Rejected by Headmaster",
+  rejected_headmaster: "Rejected by Head",
 };
 
 // A rotating gold/violet/stone palette for series that don't map to a
@@ -233,10 +233,10 @@ function Badge({ status }) {
 
 const PTA_STATUS_META = {
   pending_admin: { label: "Awaiting Admin", color: "bg-amber-100 text-amber-800" },
-  pending_headmaster: { label: "Awaiting Headmaster", color: "bg-violet-100 text-violet-800" },
+  pending_headmaster: { label: "Awaiting Head", color: "bg-violet-100 text-violet-800" },
   recorded: { label: "Recorded", color: "bg-emerald-100 text-emerald-800" },
   rejected_admin: { label: "Returned by Admin", color: "bg-rose-100 text-rose-800" },
-  rejected_headmaster: { label: "Returned by Headmaster", color: "bg-rose-100 text-rose-800" },
+  rejected_headmaster: { label: "Returned by Head", color: "bg-rose-100 text-rose-800" },
 };
 
 function PtaStatusBadge({ status }) {
@@ -749,7 +749,7 @@ function InviteRegistration({ inviteToken }) {
   const [ptaRejectReason, setPtaRejectReason] = useState("");
   const [ptaSubmitting, setPtaSubmitting] = useState(false);
 
-  // Dashboard & printable reports (Admin / Super Admin / Headmaster only)
+  // Dashboard & printable reports (Admin / Super Admin / Head only)
   const [dashboardData, setDashboardData] = useState(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [showStudentsModal, setShowStudentsModal] = useState(false);
@@ -1001,7 +1001,7 @@ function InviteRegistration({ inviteToken }) {
     try {
       const data = await api(`/api/exams/${id}`, token);
       setExam(data); setMarksEdit(null);
-      // Marks entry should only ever list Headmaster-approved students —
+      // Marks entry should only ever list Head-approved students —
       // regardless of who's viewing — so pending additions stay out of
       // the marks sheet until validated.
       const s = await api(`/api/students?class=${encodeURIComponent(data.class)}&status=approved`, token);
@@ -1098,7 +1098,7 @@ function InviteRegistration({ inviteToken }) {
     }
   }, [token, user]);
 
-  // Admin/Headmaster always see a small badge for how many payments are
+  // Admin/Head always see a small badge for how many payments are
   // waiting on them, even before they open the Accounts tab.
   useEffect(() => {
     if (token && ["administrator", "super_administrator", "headmaster"].includes(user?.role)) {
@@ -1206,7 +1206,7 @@ function InviteRegistration({ inviteToken }) {
   async function forwardPtaPayment(id) {
     try {
       await api(`/api/pta/payments/${id}/forward`, token, { method: "POST" });
-      showToast("Forwarded to Headmaster.", "success");
+      showToast("Forwarded to Head.", "success");
       await loadAccountsData();
     } catch (e) { showToast(e.message, "error"); }
   }
@@ -1219,10 +1219,10 @@ function InviteRegistration({ inviteToken }) {
     } catch (e) { showToast(e.message, "error"); }
   }
 
-  async function rejectPtaPayment(id, isHeadmaster) {
+  async function rejectPtaPayment(id, isHead) {
     if (!ptaRejectReason.trim()) return showToast("Enter a reason for rejecting.", "error");
     try {
-      await api(`/api/pta/payments/${id}/${isHeadmaster ? "hm-reject" : "reject"}`, token, { method: "POST", body: JSON.stringify({ reason: ptaRejectReason }) });
+      await api(`/api/pta/payments/${id}/${isHead ? "hm-reject" : "reject"}`, token, { method: "POST", body: JSON.stringify({ reason: ptaRejectReason }) });
       showToast("Payment returned.", "success");
       setPtaRejectingId(null); setPtaRejectReason("");
       await loadAccountsData();
@@ -1234,7 +1234,7 @@ function InviteRegistration({ inviteToken }) {
     try {
       await api("/api/students", token, { method: "POST", body: JSON.stringify({ ...newStudent, class: exam.class }) });
       setNewStudent({ fullName: "", admissionNo: "", parentPhone: "", sex: "" });
-      showToast("Student submitted — pending Headmaster approval.", "success");
+      showToast("Student submitted — pending Head approval.", "success");
       if (["administrator", "super_administrator", "headmaster"].includes(user.role)) loadPendingStudents();
     } catch (e) { showToast(e.message, "error"); }
   }
@@ -1369,7 +1369,7 @@ function InviteRegistration({ inviteToken }) {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Upload failed.");
       setUploadResult(json);
-      showToast(`${json.added.length} student(s) submitted — pending Headmaster approval.`, "success");
+      showToast(`${json.added.length} student(s) submitted — pending Head approval.`, "success");
     } catch (e) { showToast(e.message, "error"); }
     setUploading(false);
     fileInput.value = "";
@@ -1612,7 +1612,7 @@ function InviteRegistration({ inviteToken }) {
                   <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
                     <option value="teacher">Teacher</option>
                     <option value="administrator">Administrator</option>
-                    <option value="headmaster">Headmaster</option>
+                    <option value="headmaster">Head</option>
                   </select>
                 </div>
                 <Btn kind="primary" onClick={createStaff}>Create Staff</Btn>
@@ -1740,7 +1740,7 @@ function InviteRegistration({ inviteToken }) {
         <div className="max-w-4xl mx-auto p-4 md:p-6 w-full space-y-4">
           <div>
             <h1 className="font-serif text-2xl">Student Approvals</h1>
-            <p className="text-sm text-stone-500 mt-1">Students added by a Form Master or Administrator wait here until the Headmaster validates them. They won't appear for marks entry until approved.</p>
+            <p className="text-sm text-stone-500 mt-1">Students added by a Form Master or Administrator wait here until the Head validates them. They won't appear for marks entry until approved.</p>
           </div>
 
           {pendingStudents.length === 0 ? (
@@ -1768,7 +1768,7 @@ function InviteRegistration({ inviteToken }) {
                         </div>
                       )
                     ) : (
-                      <span className="text-xs bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full font-medium whitespace-nowrap">Awaiting Headmaster</span>
+                      <span className="text-xs bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full font-medium whitespace-nowrap">Awaiting Head</span>
                     )}
                   </div>
                 </div>
@@ -1781,7 +1781,7 @@ function InviteRegistration({ inviteToken }) {
         <div className="max-w-5xl mx-auto p-4 md:p-6 w-full space-y-6">
           <div>
             <h1 className="font-serif text-2xl">Accounts — P.T.A. Dues</h1>
-            <p className="text-sm text-stone-500 mt-1">GHS 30 per term · GHS 90 total for the year. Teacher collects → Admin forwards → Headmaster validates → SMS sent to parent.</p>
+            <p className="text-sm text-stone-500 mt-1">GHS 30 per term · GHS 90 total for the year. Teacher collects → Admin forwards → Head validates → SMS sent to parent.</p>
           </div>
 
           {/* TEACHER (COLLECTOR) PANEL */}
@@ -1799,7 +1799,7 @@ function InviteRegistration({ inviteToken }) {
                   <input type="number" min="1" max="30" placeholder="Amount (GHS)" value={ptaNewPayment.amount} onChange={(e) => setPtaNewPayment({ ...ptaNewPayment, amount: e.target.value })} className="w-full sm:w-40 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white" />
                   <Btn kind="primary" onClick={recordPtaPayment} disabled={ptaSubmitting}>Submit</Btn>
                 </div>
-                <p className="text-xs text-stone-500 mt-2">Submitting sends this to the Administrator for review, then the Headmaster for final validation. The parent gets an SMS only once the Headmaster validates it.</p>
+                <p className="text-xs text-stone-500 mt-2">Submitting sends this to the Administrator for review, then the Head for final validation. The parent gets an SMS only once the Head validates it.</p>
               </div>
 
               <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
@@ -1931,7 +1931,7 @@ function InviteRegistration({ inviteToken }) {
                           {user.role === "headmaster" ? (
                             <Btn kind="success" onClick={() => validatePtaPayment(p.id)}>Validate</Btn>
                           ) : (
-                            <Btn kind="success" onClick={() => forwardPtaPayment(p.id)}>Forward to Headmaster</Btn>
+                            <Btn kind="success" onClick={() => forwardPtaPayment(p.id)}>Forward to Head</Btn>
                           )}
                           <Btn kind="danger" onClick={() => setPtaRejectingId(p.id)}>Return</Btn>
                         </div>
@@ -2263,7 +2263,7 @@ function InviteRegistration({ inviteToken }) {
 
                     {user.role === "administrator" && exam.status === "submitted" && (
                       <>
-                        <Btn kind="success" onClick={() => act("/admin-approve")}>Approve & Send to Headmaster</Btn>
+                        <Btn kind="success" onClick={() => act("/admin-approve")}>Approve & Send to Head</Btn>
                         <Btn kind="danger" onClick={() => openReasonModal("admin_return")}>Return to Teacher</Btn>
                       </>
                     )}
@@ -2331,7 +2331,7 @@ function InviteRegistration({ inviteToken }) {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 min-w-0">
                           <div className="font-medium text-sm mb-1 text-stone-700">Add Student</div>
-                          <div className="text-xs text-stone-500 mb-3">New students are sent to the Headmaster for validation before they appear for marks entry.</div>
+                          <div className="text-xs text-stone-500 mb-3">New students are sent to the Head for validation before they appear for marks entry.</div>
                           <div className="flex flex-col gap-2">
                             <input type="text" placeholder="Full Name" value={newStudent.fullName} onChange={(e) => setNewStudent({ ...newStudent, fullName: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold" />
                             <select value={newStudent.sex} onChange={(e) => setNewStudent({ ...newStudent, sex: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold">
@@ -2368,7 +2368,7 @@ function InviteRegistration({ inviteToken }) {
                             </label>
                             {uploadResult && (
                               <div className="text-xs mt-2 space-y-0.5">
-                                {uploadResult.added.length > 0 && <div className="text-emerald-700">{uploadResult.added.length} submitted — pending Headmaster approval.</div>}
+                                {uploadResult.added.length > 0 && <div className="text-emerald-700">{uploadResult.added.length} submitted — pending Head approval.</div>}
                                 {uploadResult.skipped.length > 0 && <div className="text-amber-700">{uploadResult.skipped.length} skipped (duplicate admission no.).</div>}
                                 {uploadResult.errors.length > 0 && <div className="text-rose-700">{uploadResult.errors.length} row(s) had errors.</div>}
                               </div>
