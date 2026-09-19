@@ -1462,7 +1462,7 @@ function InviteRegistration({ inviteToken }) {
     setReason("");
   }
 
-  if (!token) {
+  const inviteToken = !token ? new URLSearchParams(window.location.search).get("invite") : null;   if (!token && inviteToken) {     return <InviteRegistration inviteToken={inviteToken} />;   }    if (!token) {
     return (
       <div className="min-h-screen bg-stone-900 text-stone-100 flex items-center justify-center p-4">
         <div className="login-card-neu rounded-2xl p-8 w-full max-w-md relative overflow-hidden">
