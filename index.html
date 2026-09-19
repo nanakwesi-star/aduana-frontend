@@ -598,7 +598,91 @@ function StudentsBreakdownModal({ token, onClose }) {
   );
 }
 
-function App() {
+function InviteRegistration({ inviteToken }) {
+  const [info, setInfo] = useState(null);
+  const [status, setStatus] = useState("checking"); // checking | ready | invalid | done
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api(`/api/public/staff-invite/${encodeURIComponent(inviteToken)}`)
+      .then((data) => { setInfo(data); setStatus("ready"); })
+      .catch(() => setStatus("invalid"));
+  }, [inviteToken]);
+
+  async function submit() {
+    if (password.length < 8) return setError("Password must be at least 8 characters.");
+    if (password !== confirm) return setError("The two passwords do not match.");
+    setSaving(true); setError(null);
+    try {
+      await api(`/api/public/staff-invite/${encodeURIComponent(inviteToken)}`, null, {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      });
+      setStatus("done");
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  }
+
+  function goToSignIn() { window.location.href = window.location.origin + window.location.pathname; }
+
+  return (
+    <div className="min-h-screen bg-stone-900 text-stone-100 flex items-center justify-center p-4">
+      <div className="login-card-neu rounded-2xl p-8 w-full max-w-md">
+        <div className="text-center mb-6">
+          <img src={SCHOOL_CREST} alt="Aduana Model JHS crest" className="w-20 h-20 mx-auto object-contain drop-shadow-md" />
+          <h1 className="font-serif text-2xl font-bold mt-3">Aduana Model JHS</h1>
+          <p className="text-xs text-stone-400 mt-1">Set up your login</p>
+        </div>
+
+        {status === "checking" && (
+          <div className="text-center text-sm text-stone-400 py-6">Checking your link… this can take up to a minute.</div>
+        )}
+
+        {status === "invalid" && (
+          <div className="text-center py-4">
+            <div className="text-rose-400 text-sm bg-rose-950/50 border border-rose-900 p-3 rounded-lg mb-4">
+              This registration link is invalid or has expired. Please ask the Administrator to resend your link.
+            </div>
+            <button onClick={goToSignIn} className="neu-btn w-full text-gold font-semibold py-2.5 rounded-lg text-sm">Go to Sign In</button>
+          </div>
+        )}
+
+        {status === "ready" && (
+          <div className="space-y-4">
+            <p className="text-sm text-stone-300 text-center">
+              Welcome, <span className="font-semibold text-gold">{info?.name}</span>. Choose a password to activate your account.
+            </p>
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">New Password</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" className="neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Confirm Password</label>
+              <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Type it again" className="neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none" />
+            </div>
+            {error && <div className="text-rose-400 text-xs bg-rose-950/50 border border-rose-900 p-2.5 rounded-lg">{error}</div>}
+            <button onClick={submit} disabled={saving} className="neu-btn w-full text-gold font-semibold py-2.5 rounded-lg transition text-sm disabled:opacity-50">
+              {saving ? "Saving…" : "Activate My Account"}
+            </button>
+          </div>
+        )}
+
+        {status === "done" && (
+          <div className="text-center py-4">
+            <div className="check-circle-neu w-16 h-16 rounded-full flex items-center justify-center text-3xl text-gold mx-auto mb-4">✓</div>
+            <h2 className="font-serif text-xl font-bold">Account Activated</h2>
+            <p className="text-xs text-stone-400 mt-2 mb-5">You can now sign in with your phone number and the password you just chose.</p>
+            <button onClick={goToSignIn} className="neu-btn w-full text-gold font-semibold py-2.5 rounded-lg text-sm">Go to Sign In</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+  function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState(null);
