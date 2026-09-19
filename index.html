@@ -955,7 +955,7 @@ function InviteRegistration({ inviteToken }) {
     } catch (e) { showToast(e.message, "error"); }
   }
 
-  useEffect(() => { if (token && view === "admin") loadAdminData(); }, [token, view]);
+  useEffect(() => { if (token && view === "admin") loadAdminData(); }, [token, view]);    const [overviewData, setOverviewData] = useState(null);   useEffect(() => {     if (token && view === "overview") {       api("/api/overview", token).then(setOverviewData).catch((e) => showToast(e.message, "error"));     }   }, [token, view]);
 
   async function createStaff() {
     if (!newStaff.surname.trim() || !newStaff.firstName.trim() || !newStaff.phone.trim()) return showToast("Fill in surname, first name, and phone number.", "error");
@@ -1640,7 +1640,7 @@ function InviteRegistration({ inviteToken }) {
           </div>
           {(["administrator", "super_administrator", "headmaster"].includes(user.role) || (user.role === "teacher" && ptaMyStatus.isCollector)) && (
             <div className="flex bg-violet-900/80 rounded-lg p-0.5 border border-violet-800 flex-shrink-0">
-              <button onClick={() => setView("exams")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "exams" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Exams</button>
+              <button onClick={() => setView("exams")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "exams" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Exams</button>               {["administrator", "super_administrator", "headmaster"].includes(user.role) && (                 <button onClick={() => setView("overview")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "overview" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Overview</button>               )}
               {["administrator", "super_administrator"].includes(user.role) && (
                 <button onClick={() => setView("admin")} className={`px-3 py-1 rounded-md text-xs font-medium transition whitespace-nowrap ${view === "admin" ? "bg-gold text-violet-950 font-semibold" : "text-violet-200 hover:text-white"}`}>Admin Panel</button>
               )}
@@ -1893,7 +1893,7 @@ function InviteRegistration({ inviteToken }) {
             </div>
           )}
         </div>
-      ) : view === "accounts" ? (
+      ) : view === "overview" && ["administrator", "super_administrator", "headmaster"].includes(user.role) ? (         <div className="max-w-4xl mx-auto p-4 md:p-6 w-full space-y-4">           <h1 className="font-serif text-2xl">Teaching Overview</h1>           {overviewData ? (             <TeachingOverview staffList={overviewData.staff} classList={overviewData.classes} />           ) : (             <div className="text-center text-stone-400 py-12">Loading…</div>           )}         </div>       ) : view === "accounts" ? (
         /* ACCOUNTS VIEW — PTA Dues */
         <div className="max-w-5xl mx-auto p-4 md:p-6 w-full space-y-6">
           <div>
