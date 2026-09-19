@@ -966,7 +966,7 @@ function InviteRegistration({ inviteToken }) {
   function showToast(msg, kind = "info") { setToast({ msg, kind }); setTimeout(() => setToast(null), 3500); }
 
   async function signIn() {
-    if (!email.trim() || !password) return setLoginError("Enter your email and password.");
+    if (!email.trim() || !password) return setLoginError("Enter your phone number and password.");
     setLoggingIn(true); setLoginError(null);
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
@@ -1481,8 +1481,8 @@ function InviteRegistration({ inviteToken }) {
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Email or Phone Number</label>
-                  <input type="text" inputMode="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="name@aduanamodel.edu.gh or 024xxxxxxx" className={`neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none ${loginShake ? "input-error" : ""}`} />
+                  <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Phone Number</label>
+                  <input type="text" inputMode="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="024xxxxxxx" className={`neu-input w-full rounded-lg px-3 py-2 text-sm text-stone-100 focus:outline-none ${loginShake ? "input-error" : ""}`} />
                 </div>
                 <div>
                   <label className="block text-xs uppercase tracking-wider text-stone-400 mb-1">Password</label>
