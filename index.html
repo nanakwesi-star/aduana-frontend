@@ -852,6 +852,7 @@ function InviteRegistration({ inviteToken }) {
   const [rejectingStudentId, setRejectingStudentId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
   const [adminTab, setAdminTab] = useState("term");
+  const [adminStudentClass, setAdminStudentClass] = useState("");
   const [ptaMyStatus, setPtaMyStatus] = useState({ isCollector: false, scopes: [] });
   const [ptaStudents, setPtaStudents] = useState([]);
   const [ptaMyPayments, setPtaMyPayments] = useState([]);
@@ -1346,7 +1347,7 @@ function InviteRegistration({ inviteToken }) {
   async function addStudent() {
     if (!newStudent.fullName) return showToast("Enter the student's name.", "error");
     try {
-      const created = await api("/api/students", token, { method: "POST", body: JSON.stringify({ ...newStudent, class: exam.class }) });
+      const created = await api("/api/students", token, { method: "POST", body: JSON.stringify({ ...newStudent, class: (view === "admin" ? adminStudentClass : exam.class) }) });
       setNewStudent({ fullName: "", parentPhone: "", sex: "" });
       showToast(`Student added as ${created.admission_no} — pending Head approval.`, "success");
       if (["administrator", "super_administrator", "headmaster"].includes(user.role)) loadPendingStudents();
@@ -1474,7 +1475,7 @@ function InviteRegistration({ inviteToken }) {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("class", exam.class);
+      formData.append("class", view === "admin" ? adminStudentClass : exam.class);
       const res = await fetch(`${API_BASE}/api/students/bulk-upload`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -1681,7 +1682,9 @@ function InviteRegistration({ inviteToken }) {
               { key: "term", label: "Term Settings" },
               { key: "staff", label: "Staff" },
               { key: "classes", label: "Classes & Subjects" },
-              { key: "parents", label: "Parents & Student Logins" },               { key: "overview", label: "Teaching Overview" },
+              { key: "parents", label: "Parents & Student Logins" },   
+          { key: "students", label: "Add Students" },
+          { key: "overview", label: "Teaching Overview" },
             ].map((t) => (
               <button key={t.key} onClick={() => setAdminTab(t.key)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${adminTab === t.key ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
@@ -1812,6 +1815,35 @@ function InviteRegistration({ inviteToken }) {
                  {adminTab === "overview" && (
             <TeachingOverview staffList={staffList} classList={classList} />
           )}
+
+{adminTab === "students" && (
+  <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm space-y-3 max-w-xl">
+    <h2 className="font-serif text-lg">Add Students to Any Class</h2>
+    <select value={adminStudentClass} onChange={(e) => setAdminStudentClass(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+      <option value="">Choose a class…</option>
+      {classList.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+    </select>
+    {adminStudentClass && (
+      <div className="flex flex-col gap-2">
+        <input type="text" placeholder="Full Name" value={newStudent.fullName} onChange={(e) => setNewStudent({ ...newStudent, fullName: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+        <select value={newStudent.sex} onChange={(e) => setNewStudent({ ...newStudent, sex: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="">Sex (optional)</option>
+          <option value="M">Male</option>
+          <option value="F">Female</option>
+        </select>
+        <input type="text" placeholder="Parent Phone (e.g. 024xxxxxxx)" value={newStudent.parentPhone} onChange={(e) => setNewStudent({ ...newStudent, parentPhone: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+        <Btn kind="primary" onClick={addStudent}>Add Student</Btn>
+        <div className="mt-3 pt-3 border-t border-stone-200">
+          <div className="font-medium text-sm mb-2">Or Bulk Add (CSV / Excel)</div>
+          <button type="button" onClick={() => downloadCsvTemplate("student_upload_template.csv", ["Full Name", "Parent Phone", "Sex"], ["Ama Serwaa", "0244123456", "F"])} className="text-xs font-medium text-violet-900 underline mb-2 inline-block">Download Template</button>
+          <input type="file" accept=".csv,.xlsx" onChange={(e) => uploadStudentsFile(e.target)} disabled={uploading} className="text-xs block" />
+          {uploadResult && <div className="text-xs mt-2 text-emerald-700">{uploadResult.added.length} submitted — pending Head approval.</div>}
+        </div>
+      </div>
+    )}
+  </div>
+)}
+          
           {adminTab === "parents" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
