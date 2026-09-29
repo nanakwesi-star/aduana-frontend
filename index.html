@@ -819,7 +819,7 @@ function InviteRegistration({ inviteToken }) {
   const [myAssignments, setMyAssignments] = useState([]);
   const [currentTerm, setCurrentTerm] = useState(null);
   const [selectedAssignment, setSelectedAssignment] = useState("");
-  const [newStudent, setNewStudent] = useState({ fullName: "", admissionNo: "", parentPhone: "", sex: "" });
+  const [newStudent, setNewStudent] = useState({ fullName: "", parentPhone: "", sex: "" });
 
   // Builds and downloads a small CSV template so bulk uploads use the
   // exact column headers the backend expects. CSV (not .xlsx) keeps this
@@ -1344,11 +1344,11 @@ function InviteRegistration({ inviteToken }) {
   }
 
   async function addStudent() {
-    if (!newStudent.fullName || !newStudent.admissionNo) return showToast("Enter name and admission number.", "error");
+    if (!newStudent.fullName) return showToast("Enter the student's name.", "error");
     try {
-      await api("/api/students", token, { method: "POST", body: JSON.stringify({ ...newStudent, class: exam.class }) });
-      setNewStudent({ fullName: "", admissionNo: "", parentPhone: "", sex: "" });
-      showToast("Student submitted — pending Head approval.", "success");
+      const created = await api("/api/students", token, { method: "POST", body: JSON.stringify({ ...newStudent, class: exam.class }) });
+      setNewStudent({ fullName: "", parentPhone: "", sex: "" });
+      showToast(`Student added as ${created.admission_no} — pending Head approval.`, "success");
       if (["administrator", "super_administrator", "headmaster"].includes(user.role)) loadPendingStudents();
     } catch (e) { showToast(e.message, "error"); }
   }
@@ -2457,12 +2457,10 @@ function InviteRegistration({ inviteToken }) {
                               <option value="F">Female</option>
                             </select>
                             <input type="text" placeholder="Parent Phone (for SMS, e.g. 024xxxxxxx)" value={newStudent.parentPhone} onChange={(e) => setNewStudent({ ...newStudent, parentPhone: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold" />
-                            <div className="flex gap-2">
-                              <input type="text" placeholder="Student Number" value={newStudent.admissionNo} onChange={(e) => setNewStudent({ ...newStudent, admissionNo: e.target.value })} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold" />
-                              <Btn kind="primary" onClick={addStudent}>
-                                <span className="whitespace-nowrap">Add Student</span>
-                              </Btn>
-                            </div>
+                            <div className="text-xs text-stone-400 -mt-1">Student Number is assigned automatically once added.</div>
+                            <Btn kind="primary" onClick={addStudent}>
+                              <span className="whitespace-nowrap">Add Student</span>
+                            </Btn>
                           </div>
 
                           <div className="mt-4 pt-4 border-t border-stone-200">
@@ -2471,8 +2469,8 @@ function InviteRegistration({ inviteToken }) {
                               type="button"
                               onClick={() => downloadCsvTemplate(
                                 "student_upload_template.csv",
-                                ["Full Name", "Student Number", "Parent Phone", "Sex"],
-                                ["Ama Serwaa", "ADU/2026/045", "0244123456", "F"]
+                                ["Full Name", "Parent Phone", "Sex"],
+                                ["Ama Serwaa", "0244123456", "F"]
                               )}
                               className="text-xs font-medium text-violet-900 hover:text-violet-700 underline mb-2 inline-block"
                             >
@@ -2484,9 +2482,14 @@ function InviteRegistration({ inviteToken }) {
                               <span className="text-xs text-stone-500 truncate">{uploading ? "Uploading…" : "CSV or Excel file"}</span>
                             </label>
                             {uploadResult && (
-                              <div className="text-xs mt-2 space-y-0.5">
-                                {uploadResult.added.length > 0 && <div className="text-emerald-700">{uploadResult.added.length} submitted — pending Head approval.</div>}
-                                {uploadResult.skipped.length > 0 && <div className="text-amber-700">{uploadResult.skipped.length} skipped (duplicate student number).</div>}
+                              <div className="text-xs mt-2 space-y-1">
+                                {uploadResult.added.length > 0 && (
+                                  <div className="text-emerald-700">
+                                    <div>{uploadResult.added.length} submitted — pending Head approval. Numbers assigned:</div>
+                                    <div className="text-stone-600 font-mono mt-0.5 break-words">{uploadResult.added.join(", ")}</div>
+                                  </div>
+                                )}
+                                {uploadResult.skipped.length > 0 && <div className="text-amber-700">{uploadResult.skipped.length} row(s) skipped — see error details if needed.</div>}
                                 {uploadResult.errors.length > 0 && <div className="text-rose-700">{uploadResult.errors.length} row(s) had errors.</div>}
                               </div>
                             )}
