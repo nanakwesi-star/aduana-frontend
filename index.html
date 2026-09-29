@@ -303,6 +303,7 @@ function ParentDashboard({ user, token, onSignOut }) {
   const [children, setChildren] = useState([]);
   const [selectedChild, setSelectedChild] = useState(null);
   const [results, setResults] = useState(null);
+  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showChangePw, setShowChangePw] = useState(false);
   const [toast, setToast] = useState(null);
@@ -317,11 +318,26 @@ function ParentDashboard({ user, token, onSignOut }) {
   }, [token]);
 
   useEffect(() => {
-    if (!selectedChild) { setResults(null); return; }
+    if (!selectedChild) { setResults(null); setReports([]); return; }
     api(`/api/parent/children/${selectedChild}/results`, token).then(setResults).catch(() => setResults([]));
+    api(`/api/parent/children/${selectedChild}/reports`, token).then(setReports).catch(() => setReports([]));
   }, [selectedChild, token]);
 
   const child = children.find((c) => c.id === selectedChild);
+
+  async function downloadReport(r) {
+    try {
+      const res = await fetch(`${API_BASE}/api/parent/children/${selectedChild}/reports/pdf?term=${encodeURIComponent(r.term)}&academicYear=${r.academic_year}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || "Could not download the report."); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${child.full_name.replace(/\s+/g, "_")}_${r.term.replace(/\s+/g, "")}_Report.pdf`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) { showToast(e.message, "error"); }
+  }
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
@@ -365,6 +381,19 @@ function ParentDashboard({ user, token, onSignOut }) {
                   <div className="font-medium">{child.full_name}</div>
                   <div className="text-sm text-stone-500">{child.class} · Student Number {child.admission_no}</div>
                 </div>
+                <h2 className="font-serif text-lg mb-2">Terminal Reports</h2>
+                {reports.length === 0 ? (
+                  <div className="bg-white border border-stone-200 rounded-xl p-4 text-sm text-stone-500 mb-4">No terminal report has been released yet.</div>
+                ) : (
+                  <div className="space-y-2 mb-4">
+                    {reports.map((r) => (
+                      <div key={r.term + r.academic_year} className="bg-white border border-stone-200 rounded-xl p-4 flex items-center justify-between">
+                        <div className="font-medium">{r.term} {academicYearLabel(r.academic_year)}</div>
+                        <button onClick={() => downloadReport(r)} className="px-3 py-2 rounded-lg text-sm font-semibold bg-violet-900 text-white hover:bg-violet-800">Download Report</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <h2 className="font-serif text-lg mb-2">Published Results</h2>
                 {results === null ? (
                   <div className="text-sm text-stone-400">Loading…</div>
@@ -1682,9 +1711,9 @@ function InviteRegistration({ inviteToken }) {
               { key: "term", label: "Term Settings" },
               { key: "staff", label: "Staff" },
               { key: "classes", label: "Classes & Subjects" },
-              { key: "parents", label: "Parents & Student Logins" },   
-          { key: "students", label: "Add Students" },
-          { key: "overview", label: "Teaching Overview" },
+              { key: "parents", label: "Parents & Student Logins" },
+              { key: "students", label: "Add Students" },
+               { key: "overview", label: "Teaching Overview" },
             ].map((t) => (
               <button key={t.key} onClick={() => setAdminTab(t.key)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${adminTab === t.key ? "border-violet-900 text-violet-950" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
@@ -1815,8 +1844,7 @@ function InviteRegistration({ inviteToken }) {
                  {adminTab === "overview" && (
             <TeachingOverview staffList={staffList} classList={classList} />
           )}
-
-{adminTab === "students" && (
+          {adminTab === "students" && (
   <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm space-y-3 max-w-xl">
     <h2 className="font-serif text-lg">Add Students to Any Class</h2>
     <select value={adminStudentClass} onChange={(e) => setAdminStudentClass(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
@@ -1843,7 +1871,7 @@ function InviteRegistration({ inviteToken }) {
     )}
   </div>
 )}
-          
+
           {adminTab === "parents" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
